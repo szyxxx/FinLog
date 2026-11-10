@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Diagram</title>
+<style>
+  /* Lebar kanvas 880 px = lebar isi halaman (15,5 cm). 20 px di kanvas = 10 pt saat dicetak. */
+  :root {
+    --blue-fill: #E8F0FE; --blue-line: #2563EB; --blue-text: #1E3A8A;
+    --green-fill: #E6F5EA; --green-line: #15803D; --green-text: #14532D;
+    --gray-fill: #F1F3F5; --gray-line: #6B7280; --gray-text: #1F2937;
+    --amber-fill: #FFF3DC; --amber-line: #C2410C; --amber-text: #7C2D12;
+    --ink: #374151;
+  }
+  html, body { margin: 0; background: #fff; }
+  body { font-family: "Inter", "Noto Color Emoji", sans-serif; color: var(--ink); }
+  #d { position: relative; background: #fff; }
+  svg#wires { position: absolute; inset: 0; overflow: visible; z-index: 1; }
+  .grp { position: absolute; border: 2.5px dashed #9CA3AF; border-radius: 18px; box-sizing: border-box; z-index: 0; }
+  .grp .gt { position: absolute; left: 16px; top: 8px; font-size: 22px; font-weight: 700; color: #4B5563; }
+  .grp .gs { font-weight: 500; font-size: 20px; color: #6B7280; }
+  .box { position: absolute; box-sizing: border-box; border: 3px solid; border-radius: 14px; z-index: 2;
+         display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+         padding: 6px 10px; line-height: 1.18; }
+  .box.row { flex-direction: row; justify-content: flex-start; text-align: left; gap: 14px; padding: 8px 16px; }
+  .box.row.c { justify-content: center; }
+  .box .list { font-size: 20px; font-weight: 500; line-height: 1.35; text-align: left; }
+  .box .list b { font-weight: 700; }
+  .box .ic { font-size: 34px; line-height: 1.05; }
+  .box.row .ic { font-size: 36px; }
+  .box .t { font-size: 24px; font-weight: 700; }
+  .box .s { font-size: 20px; font-weight: 500; margin-top: 3px; }
+  .blue  { background: var(--blue-fill);  border-color: var(--blue-line);  color: var(--blue-text); }
+  .green { background: var(--green-fill); border-color: var(--green-line); color: var(--green-text); }
+  .gray  { background: var(--gray-fill);  border-color: var(--gray-line);  color: var(--gray-text); }
+  .amber { background: var(--amber-fill); border-color: var(--amber-line); color: var(--amber-text); }
+  .ghost { background: #fff; border-style: dashed; border-color: #9CA3AF; color: #6B7280; }
+  .oval { border-radius: 999px; }
+  .bubble { border-radius: 22px; padding: 10px 20px; }
+  .bubble.l { border-bottom-left-radius: 4px; align-items: flex-start; text-align: left; }
+  .bubble.r { border-bottom-right-radius: 4px; align-items: flex-end; text-align: right; }
+  .bubble .who { font-size: 20px; font-weight: 700; opacity: .85; margin-bottom: 2px; }
+  .bubble .t { font-size: 23px; font-weight: 600; }
+  .lbl { position: absolute; z-index: 3; transform: translate(-50%, -50%); background: #fff; padding: 1px 6px;
+         font-size: 20px; font-weight: 600; color: #374151; text-align: center; line-height: 1.15; white-space: nowrap; border-radius: 6px; }
+  .note { position: absolute; z-index: 2; font-size: 20px; font-weight: 500; color: #4B5563; line-height: 1.25; }
+  .actor { position: absolute; z-index: 2; text-align: center; }
+  .actor .ic { font-size: 64px; line-height: 1; }
+  .actor .t { font-size: 24px; font-weight: 700; color: #111827; margin-top: 4px; }
+  .actor .s { font-size: 20px; color: #4B5563; }
+  .chips { display: flex; gap: 12px; margin-top: 10px; }
+  .chip { background: #fff; border: 2px solid var(--blue-line); border-radius: 999px; padding: 4px 14px; font-size: 22px; font-weight: 600; color: var(--blue-text); }
+  .legend { position: absolute; z-index: 2; display: flex; gap: 26px; font-size: 20px; font-weight: 500; color: #374151; align-items: center; }
+  .legend span.k { display: inline-block; width: 26px; height: 18px; border-radius: 5px; border: 3px solid; vertical-align: -3px; margin-right: 8px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="d"><svg id="wires"></svg></div>
+<script src="diagrams.js"></script>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const name = new URLSearchParams(location.search).get("d");
+const cfg = DIAGRAMS[name];
+const D = document.getElementById("d");
+D.style.width = cfg.W + "px"; D.style.height = cfg.H + "px";
+
+function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+function place(e, o) { Object.assign(e.style, { left: o.x + "px", top: o.y + "px" }); if (o.w) e.style.width = o.w + "px"; if (o.h) e.style.height = o.h + "px"; }
+
+for (const g of cfg.groups || []) {
+  const e = el("div", "grp"); place(e, g);
+  if (g.title) { const t = el("div", "gt", g.title + (g.sub ? ` <span class="gs">${g.sub}</span>` : "")); if (g.titleBottom) { t.style.top = "auto"; t.style.bottom = "8px"; } e.appendChild(t); }
+  D.appendChild(e);
+}
+for (const b of cfg.boxes || []) {
+  const e = el("div", "box " + (b.cls || "")); e.id = b.id; place(e, b);
+  if (b.html) { e.innerHTML = b.html; D.appendChild(e); continue; }
+  if (b.who) e.appendChild(el("div", "who", b.who));
+  if (b.icon) e.appendChild(el("div", "ic", b.icon));
+  const txt = b.cls && b.cls.includes("row") ? el("div", "", "") : e;
+  if (b.title) txt.appendChild(el("div", "t", b.title));
+  if (b.sub) txt.appendChild(el("div", "s", b.sub));
+  if (b.chips) { const c = el("div", "chips"); for (const ch of b.chips) c.appendChild(el("span", "chip", ch)); txt.appendChild(c); }
+  if (txt !== e) e.appendChild(txt);
+  D.appendChild(e);
+}
+for (const a of cfg.actors || []) {
+  const e = el("div", "actor"); e.id = a.id; place(e, a);
+  e.innerHTML = `<div class="ic">${a.icon}</div><div class="t">${a.title}</div>` + (a.sub ? `<div class="s">${a.sub}</div>` : "");
+  D.appendChild(e);
+}
+for (const n of cfg.notes || []) { const e = el("div", "note", n.html); place(e, n); if (n.style) Object.assign(e.style, n.style); D.appendChild(e); }
+if (cfg.legend) {
+  const e = el("div", "legend"); place(e, cfg.legend);
+  e.innerHTML = cfg.legend.items.map(([c, t]) => `<div><span class="k ${c}"></span>${t}</div>`).join("");
+  D.appendChild(e);
+}
+
+function rect(id) {
+  const c = D.getBoundingClientRect(), r = document.getElementById(id).getBoundingClientRect();
+  return { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height };
+}
+function pt(id, side, off = 0) {
+  const r = rect(id);
+  if (side === "r") return [r.x + r.w, r.y + r.h / 2 + off];
+  if (side === "l") return [r.x, r.y + r.h / 2 + off];
+  if (side === "t") return [r.x + r.w / 2 + off, r.y];
+  return [r.x + r.w / 2 + off, r.y + r.h];
+}
+const svg = document.getElementById("wires");
+svg.setAttribute("width", cfg.W); svg.setAttribute("height", cfg.H);
+svg.innerHTML = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker></defs>`;
+for (const l of cfg.links || []) {
+  const [x1, y1] = pt(l.from, l.fs, l.fo || 0), [x2, y2] = pt(l.to, l.ts, l.too || 0);
+  const H = s => s === "l" || s === "r";
+  let p;
+  if (l.straight) p = [[x1, y1], [x2, y2]];
+  else if (H(l.fs) && H(l.ts)) p = Math.abs(y1 - y2) < 1 ? [[x1, y1], [x2, y2]] : (() => { const mx = l.mx ?? (x1 + x2) / 2; return [[x1, y1], [mx, y1], [mx, y2], [x2, y2]]; })();
+  else if (!H(l.fs) && !H(l.ts)) p = Math.abs(x1 - x2) < 1 ? [[x1, y1], [x2, y2]] : (() => { const my = l.my ?? (y1 + y2) / 2; return [[x1, y1], [x1, my], [x2, my], [x2, y2]]; })();
+  else if (H(l.fs)) p = [[x1, y1], [x2, y1], [x2, y2]];
+  else p = [[x1, y1], [x1, y2], [x2, y2]];
+  const path = document.createElementNS(NS, "polyline");
+  path.setAttribute("points", p.map(q => q.join(",")).join(" "));
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", l.color || "#374151");
+  path.setAttribute("stroke-width", l.width || 3);
+  path.setAttribute("stroke-linejoin", "round");
+  if (l.dash) path.setAttribute("stroke-dasharray", "9 7");
+  if (!l.noArrow) path.setAttribute("marker-end", "url(#ah)");
+  svg.appendChild(path);
+  if (l.label) {
+    let lx, ly;
+    if (l.lx != null) { lx = l.lx; ly = l.ly; }
+    else { let best = 0; for (let i = 0; i < p.length - 1; i++) { const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]); if (len > best) { best = len; lx = (p[i][0] + p[i + 1][0]) / 2; ly = (p[i][1] + p[i + 1][1]) / 2; } } lx += l.dx || 0; ly += l.dy || 0; }
+    const e = el("div", "lbl", l.label); e.style.left = lx + "px"; e.style.top = ly + "px";
+    if (l.lstyle) Object.assign(e.style, l.lstyle);
+    D.appendChild(e);
+  }
+}
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

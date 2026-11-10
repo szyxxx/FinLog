@@ -1,0 +1,24 @@
+# BELUM DIUJI. Butuh Docker + NVIDIA Container Toolkit agar faster-whisper bisa memakai GPU
+# (tanpa itu set WHISPER_DEVICE=cpu). Ollama diasumsikan tetap jalan di host (port 11434).
+services:
+  ai-server:
+    build: .
+    env_file: .env
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434
+      DB_PATH: /data/finance.db
+      UPLOAD_DIR: /data/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped

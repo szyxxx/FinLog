@@ -1,0 +1,25 @@
+From: TokoKita Marketplace <invoice@tokokita.contoh>
+To: pemilik@contoh.local
+Subject: Invoice INV/20261109/TK/88231 - Pesanan Dibayar
+Date: Mon, 09 Nov 2026 12:53:43 +0700
+Message-ID: <email_invoice_belanja.1794203623@contoh.local>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Terima kasih telah berbelanja di TokoKita!
+
+No. Invoice : INV/20261109/TK/88231
+Tanggal     : 09 November 2026
+Status      : LUNAS (dibayar via Virtual Account)
+
+Rincian pesanan:
+1 x Mouse Wireless Ergonomis       Rp 129.000
+1 x Mousepad XL                    Rp  45.000
+Ongkos kirim                       Rp  12.000
+Diskon ongkir                     -Rp  10.000
+Biaya layanan                      Rp   1.000
+------------------------------------------
+Total Pembayaran                   Rp 177.000
+
+Pesanan akan segera dikirim oleh penjual.

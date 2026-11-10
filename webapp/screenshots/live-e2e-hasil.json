@@ -1,0 +1,101 @@
+{
+  "when": "2026-11-09T09:58:16.642Z",
+  "log": [
+    {
+      "step": "panel sistem memuat /health + /v1/metrics + /v1/system",
+      "ok": true,
+      "detail": "0,7 / 8 GB"
+    },
+    {
+      "step": "SSE: reasoning live (llm_delta) tampil saat run berjalan",
+      "ok": true,
+      "detail": "143 karakter terlihat"
+    },
+    {
+      "step": "teks: run selesai",
+      "ok": true,
+      "detail": "Selesai dalam 22.324s, run_2cf688d120d8"
+    },
+    {
+      "step": "teks: outcome recorded + transaksi dibuat",
+      "ok": true,
+      "detail": "outcome=recorded, tx=#11 30000"
+    },
+    {
+      "step": "struk: run selesai",
+      "ok": true,
+      "detail": "Selesai 51.819s outcome=recorded run_15abaefc5881"
+    },
+    {
+      "step": "struk: step ocr + bbox digambar",
+      "ok": true,
+      "detail": "9 baris, jalur=ocr→llm_teks"
+    },
+    {
+      "step": "struk sama diunggah ulang → duplicate tanpa LLM",
+      "ok": true,
+      "detail": "duplicate, 3 ms"
+    },
+    {
+      "step": "struk lama: gambar dari /v1/runs/{id}/image + overlay",
+      "ok": true,
+      "detail": "run_680788593f5b, naturalWidth=474"
+    },
+    {
+      "step": "suara: transkripsi + agent",
+      "ok": true,
+      "detail": "\"Tadi si anaku makan makso habis dua puluh lima ribu rupiah.\" outcome=recorded 47.513s"
+    },
+    {
+      "step": "suara: audio asli dari /v1/runs/{id}/audio bisa diputar",
+      "ok": true,
+      "detail": "durasi 4.786939"
+    },
+    {
+      "step": "email baru: tercatat",
+      "ok": true,
+      "detail": "outcome=recorded, tx=185000 tagihan 34.479s"
+    },
+    {
+      "step": "email lama (Message-ID sama) → duplicate",
+      "ok": true,
+      "detail": "duplicate: Email yang sama ini sudah pernah diproses (run run_de212dcda421; #7 (Rp42.000)). Tidak dic"
+    },
+    {
+      "step": "konfirmasi: run awaiting_confirmation",
+      "ok": true,
+      "detail": "status=awaiting_confirmation outcome=needs_confirmation: Permintaan konfirmasi: \"tadi bayar 50\" - apakah maksudnya Rp 50.000 atau Rp 50? Untuk kategori penge"
+    },
+    {
+      "step": "konfirmasi: jawaban memakai conversation_id sama + answers_run_id",
+      "ok": true,
+      "detail": "outcome=recorded, answers_run_id=run_5fc732934b23, tx=50000"
+    },
+    {
+      "step": "konfirmasi: run pertanyaan punya answered_by_run_id",
+      "ok": true,
+      "detail": "run_56733a0dd78e"
+    },
+    {
+      "step": "konfirmasi: UI menandai pertanyaan sudah dijawab",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "step": "ubah transaksi (PATCH)",
+      "ok": true,
+      "detail": "#11 → 32000 \"bensin pertalite (diubah dari sandbox)\""
+    },
+    {
+      "step": "hapus transaksi (soft delete)",
+      "ok": true,
+      "detail": "#13: GET → 404, masih di daftar=false"
+    },
+    {
+      "step": "tidak ada error JS di console",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,11 @@
+# build & cache
+docs/.build/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.DS_Store
+
+# secrets
+.env
+!.env.example

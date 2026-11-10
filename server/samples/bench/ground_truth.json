@@ -1,0 +1,66 @@
+{
+ "r1_minimarket": {
+  "file": "r1_minimarket.png",
+  "desc": "minimarket sederhana, font mono, bersih",
+  "toko": "TOKO SUMBER REJEKI",
+  "tanggal": "2026-11-07",
+  "total": 52400,
+  "n_items": 3
+ },
+ "r2_resto_pajak": {
+  "file": "r2_resto_pajak.png",
+  "desc": "restoran, PPN 10% + service 5%, GRAND TOTAL, font proporsional",
+  "toko": "RM PADANG SALERO BUNDO",
+  "tanggal": "2026-11-06",
+  "total": 109250,
+  "n_items": 4
+ },
+ "r3_swalayan_diskon": {
+  "file": "r3_swalayan_diskon.png",
+  "desc": "swalayan, banyak item, diskon member, TOTAL BELANJA",
+  "toko": "PASAR SWALAYAN MAKMUR",
+  "tanggal": "2026-11-05",
+  "total": 148400,
+  "n_items": 5
+ },
+ "r4_kopi_qris": {
+  "file": "r4_kopi_qris.png",
+  "desc": "kedai kopi, tanggal teks (09 Nov 2026), TOTAL BAYAR, QRIS",
+  "toko": "KEDAI KOPI SENJA",
+  "tanggal": "2026-11-09",
+  "total": 54000,
+  "n_items": 2
+ },
+ "r5_apotek_miring_buram": {
+  "file": "r5_apotek_miring_buram.png",
+  "desc": "apotek, miring 4 derajat + buram",
+  "toko": "APOTEK SEHAT SENTOSA",
+  "tanggal": "2026-11-03",
+  "total": 50500,
+  "n_items": 3
+ },
+ "r6_font_kecil": {
+  "file": "r6_font_kecil.png",
+  "desc": "toko bangunan, font kecil (11 px), 8 item, tahun 2 digit",
+  "toko": "TOKO BANGUNAN MAJU",
+  "tanggal": "2026-11-02",
+  "total": 241000,
+  "n_items": 8
+ },
+ "r7_spbu": {
+  "file": "r7_spbu.png",
+  "desc": "SPBU, liter desimal, label berbeda (JUMLAH)",
+  "toko": "SPBU 31.154.02 CIPUTAT",
+  "tanggal": "2026-11-08",
+  "total": 40000,
+  "n_items": 1
+ },
+ "r8_warung_noise_jpeg": {
+  "file": "r8_warung_noise_jpeg.jpg",
+  "desc": "warung makan, noise berat + JPEG q25 + miring -3 derajat",
+  "toko": "WARUNG MAKAN BU SRI",
+  "tanggal": "2026-11-01",
+  "total": 31000,
+  "n_items": 4
+ }
+}

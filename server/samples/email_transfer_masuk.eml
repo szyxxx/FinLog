@@ -1,0 +1,22 @@
+From: Bank Sejahtera Notifikasi <notifikasi@banksejahtera.contoh>
+To: pemilik@contoh.local
+Subject: Dana Masuk ke Rekening Anda
+Date: Mon, 09 Nov 2026 11:53:43 +0700
+Message-ID: <email_transfer_masuk.1794200023@contoh.local>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Yth. Nasabah,
+
+Kami informasikan telah terjadi transaksi kredit pada rekening Anda:
+
+Tanggal      : 09 November 2026 09:15:22 WIB
+Jenis        : Transfer Masuk (BI-FAST)
+Dari         : ANDI PRATAMA
+Ke Rekening  : 123-***-7890
+Nominal      : Rp 750.000,00
+Berita       : bayar patungan kos
+
+Terima kasih telah menggunakan layanan Bank Sejahtera.
+Email ini dikirim otomatis, mohon tidak membalas.
