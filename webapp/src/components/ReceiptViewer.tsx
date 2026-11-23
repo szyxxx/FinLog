@@ -88,7 +88,7 @@ export function ReceiptViewer({ image, ocr, extract, validation, mockNote }: {
               <dt>Kategori</dt><dd>{data.kategori ?? "–"}</dd>
               {data.metode_bayar && <><dt>Bayar</dt><dd>{data.metode_bayar}</dd></>}
             </dl>
-            <table className="tbl">
+            <div className="tbl-wrap"><table className="tbl">
               <thead><tr><th>Item</th><th className="r">Qty</th><th className="r">Harga</th><th className="r">Subtotal</th></tr></thead>
               <tbody>
                 {(data.items ?? []).map((it: any, i: number) => (
@@ -98,7 +98,7 @@ export function ReceiptViewer({ image, ocr, extract, validation, mockNote }: {
                 {!!data.pajak_layanan && <tr><td className="muted">Pajak/layanan</td><td /><td /><td className="r">{rp(data.pajak_layanan)}</td></tr>}
                 <tr><td><b>Total</b></td><td /><td /><td className="r"><b>{rp(data.total)}</b></td></tr>
               </tbody>
-            </table>
+            </table></div>
             {validation && <ValidationChecks step={validation} />}
           </div>
         ) : <div className="empty">Belum ada hasil ekstraksi.</div>)}

@@ -1,7 +1,7 @@
 // Klien live: REST + SSE ke AI server sungguhan (docs/api.md).
 import type {
-  ApiClient, Category, Health, InputResponse, JobsResponse, Metrics, RunQuery, RunSummary,
-  StreamEvent, Summary, SystemInfo, Tx, TxList, TxQuery,
+  ApiClient, Automation, Bill, BillList, BudgetRow, BudgetStatus, Category, Health, InputResponse, JobsResponse,
+  Metrics, Notif, RecurringCandidate, Report, RunQuery, RunSummary, StreamEvent, Summary, SystemInfo, Tx, TxList, TxQuery,
 } from "./types";
 
 export class ApiError extends Error {
@@ -10,7 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-const STREAM_EVENTS = ["hello", "job_status", "run_status", "step_started", "llm_delta", "step", "run_finished"] as const;
+const STREAM_EVENTS = ["hello", "job_status", "run_status", "step_started", "llm_delta", "step", "run_finished", "notification"] as const;
 
 function qs(params: Record<string, unknown> = {}): string {
   const p = new URLSearchParams();
@@ -199,15 +199,34 @@ export class HttpClient implements ApiClient {
   summary(q: Record<string, string | undefined> = {}) { return this.req<Summary>(`/v1/summary${qs(q)}`); }
   categories() { return this.req<Category[]>("/v1/categories"); }
 
-  private fileUrl(run: RunSummary, kind: "image" | "audio") {
+  private runFileUrl(run: RunSummary, kind: "image" | "audio") {
     return this.withKeyParam(`${this.base}/v1/runs/${encodeURIComponent(run.id)}/${kind}`, "key");
   }
+  fileUrl(path: string) { return this.withKeyParam(`${this.base}${path}`, "key"); }
+
+  // ---- layanan baru: anggaran, tagihan, notifikasi, laporan, otomasi
+  budgets() { return this.req<BudgetStatus>("/v1/budgets"); }
+  setBudget(kategori: string, batas: number, ambang = 80) {
+    return this.req<BudgetRow>(`/v1/budgets/${encodeURIComponent(kategori)}`, { method: "PUT", body: JSON.stringify({ batas_bulanan: batas, ambang_persen: ambang }) });
+  }
+  deleteBudget(kategori: string) { return this.req(`/v1/budgets/${encodeURIComponent(kategori)}`, { method: "DELETE" }); }
+  bills(status = "aktif") { return this.req<BillList>(`/v1/bills${qs({ status })}`); }
+  addBill(body: Record<string, unknown>) { return this.req<Bill>("/v1/bills", { method: "POST", body: JSON.stringify(body) }); }
+  payBill(id: number) { return this.req<{ transaksi: Tx; tagihan: Bill; peringatan_anggaran?: string[] }>(`/v1/bills/${id}/pay`, { method: "POST", body: "{}" }); }
+  deleteBill(id: number) { return this.req<Bill>(`/v1/bills/${id}`, { method: "DELETE" }); }
+  detectSubscriptions() { return this.req<{ kandidat: RecurringCandidate[]; jumlah: number }>("/v1/subscriptions/detect"); }
+  notifications(unread = false) { return this.req<{ unread: number; notifications: Notif[] }>(`/v1/notifications${qs({ unread: unread || undefined })}`); }
+  readNotifications(ids?: number[]) { return this.req("/v1/notifications/read", { method: "POST", body: JSON.stringify({ ids: ids ?? null }) }); }
+  reports() { return this.req<{ reports: Report[] }>("/v1/reports"); }
+  requestReport(periode: string) { return this.req<InputResponse>("/v1/reports", { method: "POST", body: JSON.stringify({ periode }) }); }
+  automations() { return this.req<{ enabled: boolean; timezone: string; tasks: Automation[] }>("/v1/automations"); }
+  runAutomation(name: string) { return this.req<any>(`/v1/automations/${encodeURIComponent(name)}/run`, { method: "POST" }); }
   /** Key di query hanya bila diisi di Pengaturan; kosong = proxy web app yang menyisipkan X-API-Key. */
   private withKeyParam(url: string, name: "api_key" | "key") {
     if (!this.key) return url;
     return `${url}${url.includes("?") ? "&" : "?"}${name}=${encodeURIComponent(this.key)}`;
   }
   // Pakai salinan lokal bila struk diunggah dari browser ini (langsung tampil), selain itu ambil dari server.
-  receiptImage(run: RunSummary) { return this.images.get(run.id) ?? this.fileUrl(run, "image"); }
-  runAudio(run: RunSummary) { return this.fileUrl(run, "audio"); }
+  receiptImage(run: RunSummary) { return this.images.get(run.id) ?? this.runFileUrl(run, "image"); }
+  runAudio(run: RunSummary) { return this.runFileUrl(run, "audio"); }
 }

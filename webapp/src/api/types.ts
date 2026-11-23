@@ -1,16 +1,16 @@
 // Tipe data mengikuti docs/api.md (v0.1). Field yang tidak pasti dibuat opsional.
 
 /** "email" hanya untuk menampilkan run lama; fitur email sudah dihapus dari server/web app. */
-export type InputType = "text" | "receipt" | "voice" | "email";
+export type InputType = "text" | "receipt" | "voice" | "email" | "automation";
 export type JobStatus = "queued" | "running" | "done" | "error";
 export type RunStatus = "queued" | "running" | "done" | "awaiting_confirmation" | "done_with_warnings" | "error";
 export type RunOutcome =
   | "recorded" | "modified" | "answered" | "not_transaction" | "duplicate"
-  | "possible_duplicate" | "needs_confirmation" | "error";
+  | "possible_duplicate" | "needs_confirmation" | "report" | "error";
 
 export type StepType =
   | "input" | "preprocess" | "ocr" | "rules" | "validation" | "fallback" | "reasoning" | "llm" | "tool"
-  | "dedup" | "context" | "guard" | "confirmation" | "final" | "error";
+  | "dedup" | "context" | "guard" | "confirmation" | "final" | "error" | "sandbox";
 
 export interface Job {
   id: string;
@@ -49,8 +49,13 @@ export interface Tx {
   description?: string | null;
   merchant?: string | null;
   date: string;
-  source: "text" | "receipt" | "voice" | "email" | "manual";
+  source: "text" | "receipt" | "voice" | "email" | "manual" | "demo" | "otomasi" | "tagihan" | string;
   items?: ReceiptItem[] | null;
+  /** Transaksi mata uang asing (tool konversi_kurs). */
+  orig_currency?: string | null;
+  orig_amount?: number | null;
+  fx_rate?: number | null;
+  bill_id?: number | null;
   run_id?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -189,7 +194,45 @@ export type StreamEvent =
   | { event: "step_started"; data: { run_id: string; type: string; name: string; started_at: number } }
   | { event: "llm_delta"; data: { run_id: string; step_name: string; kind: "thinking" | "content"; index: number; text: string } }
   | { event: "step"; data: Step }
-  | { event: "run_finished"; data: RunSummary };
+  | { event: "run_finished"; data: RunSummary }
+  | { event: "notification"; data: Notif };
+
+// ---------------------------------------------------------------- layanan baru (anggaran, tagihan, otomasi)
+
+export interface BudgetRow {
+  kategori: string; batas: number; terpakai: number; sisa: number; persen: number; ambang_persen: number;
+  proyeksi_akhir_bulan: number; sisa_per_hari: number;
+  status: "aman" | "waspada" | "terlampaui" | "diproyeksikan_lewat";
+}
+export interface BudgetStatus { bulan: string; hari_ke: number; jumlah_hari: number; anggaran: BudgetRow[]; kategori_tanpa_anggaran: string[] }
+
+export interface Bill {
+  id: number; name: string; amount: number; category: string; merchant?: string | null;
+  frequency: "mingguan" | "bulanan" | "tahunan"; next_due: string; auto_record: boolean; origin: string;
+  active: boolean; last_paid?: string | null; hari_lagi: number | null;
+}
+export interface BillList { tagihan: Bill[]; jumlah: number; perkiraan_total_per_bulan: number }
+
+export interface RecurringCandidate {
+  nama: string; kunci: string; frekuensi: string; nominal_tipikal: number; kategori: string; kemunculan: number;
+  tanggal: string[]; perkiraan_berikutnya: string; keyakinan: number;
+}
+
+export interface Notif {
+  id: number; kind: "anggaran" | "tagihan" | "laporan" | "langganan" | "otomasi" | string;
+  level: "info" | "warning" | "danger"; title: string; body?: string | null; data?: any; read: boolean; created_at: string;
+}
+
+export interface Report {
+  id: string; kind: string; period_label: string; date_from: string; date_to: string; narrative?: string;
+  narrative_source: "agent" | "template" | string; run_id?: string | null; created_at: string; url: string;
+  total: { pemasukan: number; pengeluaran: number; saldo: number; jumlah_transaksi: number };
+}
+
+export interface Automation {
+  name: string; label: string; jadwal: string; pakai_llm: boolean; aktif: boolean; slot_terakhir: string | null;
+  terakhir_jalan: string | null; status_terakhir: string | null; detail_terakhir: any; jadwal_berikutnya: string;
+}
 
 export interface TxQuery {
   jenis?: string;
@@ -238,4 +281,22 @@ export interface ApiClient {
   receiptImage(run: RunSummary): string | null;
   /** URL voice note asli untuk run (GET /v1/runs/{id}/audio?key=). */
   runAudio(run: RunSummary): string | null;
+
+  // ---- layanan baru
+  budgets(): Promise<BudgetStatus>;
+  setBudget(kategori: string, batas: number, ambang?: number): Promise<BudgetRow>;
+  deleteBudget(kategori: string): Promise<unknown>;
+  bills(status?: string): Promise<BillList>;
+  addBill(body: { nama: string; jumlah: number; jatuh_tempo: string; frekuensi?: string; kategori?: string; catat_otomatis?: boolean }): Promise<Bill>;
+  payBill(id: number): Promise<{ transaksi: Tx; tagihan: Bill; peringatan_anggaran?: string[] }>;
+  deleteBill(id: number): Promise<Bill>;
+  detectSubscriptions(): Promise<{ kandidat: RecurringCandidate[]; jumlah: number }>;
+  notifications(unread?: boolean): Promise<{ unread: number; notifications: Notif[] }>;
+  readNotifications(ids?: number[]): Promise<unknown>;
+  reports(): Promise<{ reports: Report[] }>;
+  requestReport(periode: string): Promise<InputResponse>;
+  automations(): Promise<{ enabled: boolean; timezone: string; tasks: Automation[] }>;
+  runAutomation(name: string): Promise<any>;
+  /** URL file dari server (grafik /v1/artifacts/{id}, PDF /v1/reports/{id}/pdf), dengan key bila perlu. */
+  fileUrl(path: string): string;
 }

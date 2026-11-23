@@ -20,6 +20,8 @@ from . import db, engine, llm, metrics, tools
 from .agent import CONFIRM_LINK_COLS, get_run_summary
 from .config import get_settings
 from .inputs import email_in
+from .services import automation, planning, reports
+from .services.automation import scheduler
 from .jobqueue import job_queue
 from .util import err
 from .trace import bus, step_row
@@ -39,9 +41,11 @@ async def lifespan(app: FastAPI):
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     await engine.startup()
     job_queue.start()
+    scheduler.start()
     log.info("server siap di %s:%s, model=%s, engine=%s", settings.host, settings.port, settings.llm_model,
              settings.agent_engine)
     yield
+    await scheduler.stop()
     await job_queue.stop()
     await engine.shutdown()
 
@@ -169,6 +173,9 @@ async def system_info():
         "receipt_fallback_vision": settings.receipt_fallback_vision, "receipt_rules_first": settings.receipt_rules_first,
         "model_capabilities": caps, "whisper_model": settings.whisper_model, "whisper_device": settings.whisper_device,
         "email_enabled": settings.email_enabled, "imap_enabled": settings.email_enabled and settings.imap_enabled,
+        "automation_enabled": settings.automation_enabled, "fx_enabled": settings.fx_enabled,
+        "external_tools": [{"name": "konversi_kurs", "provider": "api.frankfurter.dev (cadangan open.er-api.com)",
+                            "data_keluar": "kode mata uang + tanggal saja"}],
         "tools": tools.TOOL_SPECS, "categories": [
             {"name": n, "kind": k, "description": d} for n, k, d in db.CATEGORIES],
     }
@@ -470,6 +477,171 @@ async def get_summary(periode: str = "bulan_ini", tanggal_mulai: str | None = No
 @app.get("/v1/categories", tags=["transaksi"], dependencies=[Depends(require_key)])
 async def categories():
     return [{"name": n, "kind": k, "description": d} for n, k, d in db.CATEGORIES]
+
+
+# ------------------------------------------------------------------ layanan baru: anggaran, tagihan, notifikasi,
+# laporan, grafik, otomasi, kurs
+
+class BudgetIn(BaseModel):
+    batas_bulanan: int = Field(..., gt=0)
+    ambang_persen: int = Field(80, ge=10, le=100)
+
+
+class BillIn(BaseModel):
+    nama: str = Field(..., min_length=1, max_length=80)
+    jumlah: int = Field(..., gt=0)
+    jatuh_tempo: str = Field(..., description="Tanggal tiap bulan ('5') atau YYYY-MM-DD")
+    frekuensi: Literal["mingguan", "bulanan", "tahunan"] = "bulanan"
+    kategori: str = "tagihan"
+    catat_otomatis: bool = False
+    merchant: str | None = None
+
+
+class BillPatch(BaseModel):
+    nama: str | None = None
+    jumlah: int | None = Field(None, gt=0)
+    jatuh_tempo: str | None = None
+    frekuensi: Literal["mingguan", "bulanan", "tahunan"] | None = None
+    kategori: str | None = None
+    catat_otomatis: bool | None = None
+    aktif: bool | None = None
+
+
+class PayIn(BaseModel):
+    tanggal: str | None = None
+    jumlah: int | None = Field(None, gt=0)
+
+
+class ReadIn(BaseModel):
+    ids: list[int] | None = Field(None, description="Kosong = tandai semua sudah dibaca")
+
+
+class ReportIn(BaseModel):
+    periode: Literal["minggu_lalu", "minggu_ini", "bulan_lalu", "bulan_ini"] = "bulan_ini"
+
+
+def _plan(fn, *a, **k):
+    try:
+        return fn(*a, **k)
+    except (planning.PlanError, tools.ToolError) as e:
+        raise HTTPException(404 if "tidak ditemukan" in str(e) else 400, str(e)) from e
+
+
+@app.get("/v1/budgets", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def get_budgets():
+    """Status anggaran bulan berjalan (terpakai, sisa, proyeksi akhir bulan)."""
+    return planning.budget_status()
+
+
+@app.put("/v1/budgets/{kategori}", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def put_budget(kategori: str, body: BudgetIn):
+    return _plan(planning.set_budget, kategori, body.batas_bulanan, body.ambang_persen)
+
+
+@app.delete("/v1/budgets/{kategori}", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def del_budget(kategori: str):
+    if not planning.delete_budget(kategori):
+        raise HTTPException(404, "anggaran tidak ditemukan")
+    return {"ok": True}
+
+
+@app.get("/v1/bills", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def get_bills(status: Literal["aktif", "segera", "terlambat"] = "aktif"):
+    return planning.list_bills(status)
+
+
+@app.post("/v1/bills", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)], status_code=201)
+async def post_bill(body: BillIn):
+    return _plan(planning.add_bill, body.nama, body.jumlah, body.jatuh_tempo, body.kategori, body.frekuensi,
+                 body.catat_otomatis, body.merchant)
+
+
+@app.patch("/v1/bills/{bill_id}", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def patch_bill(bill_id: int, body: BillPatch):
+    return _plan(planning.update_bill, bill_id, body.model_dump(exclude_none=True))
+
+
+@app.post("/v1/bills/{bill_id}/pay", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def pay_bill(bill_id: int, body: PayIn):
+    res = _plan(planning.pay_bill, bill_id, tools.parse_date(body.tanggal) if body.tanggal else None, body.jumlah, "manual")
+    res["peringatan_anggaran"] = planning.check_budget_after_write(res["transaksi"])
+    return res
+
+
+@app.delete("/v1/bills/{bill_id}", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def delete_bill(bill_id: int):
+    """Nonaktifkan tagihan (riwayat transaksinya tetap)."""
+    return _plan(planning.update_bill, bill_id, {"aktif": False})
+
+
+@app.get("/v1/subscriptions/detect", tags=["anggaran & tagihan"], dependencies=[Depends(require_key)])
+async def detect_subscriptions():
+    """Kandidat langganan/tagihan berulang dari riwayat transaksi (belum terdaftar sebagai tagihan)."""
+    return planning.detect_recurring()
+
+
+@app.get("/v1/notifications", tags=["otomasi"], dependencies=[Depends(require_key)])
+async def get_notifications(unread: bool = False, limit: int = Query(50, ge=1, le=500)):
+    return planning.list_notifications(unread, limit)
+
+
+@app.post("/v1/notifications/read", tags=["otomasi"], dependencies=[Depends(require_key)])
+async def read_notifications(body: ReadIn):
+    return {"updated": planning.mark_read(body.ids)}
+
+
+@app.get("/v1/reports", tags=["otomasi"], dependencies=[Depends(require_key)])
+async def list_reports(limit: int = Query(30, ge=1, le=200)):
+    return {"reports": [reports.report_row(r) for r in db.query("SELECT * FROM reports ORDER BY created_at DESC LIMIT ?",
+                                                                (limit,))]}
+
+
+@app.post("/v1/reports", tags=["otomasi"], dependencies=[Depends(rate_limit)])
+async def request_report(body: ReportIn, wait: bool = WaitQ, timeout: float = TimeoutQ):
+    """Minta agent membuat laporan sekarang (job `automation`: fakta_laporan -> narasi -> buat_laporan)."""
+    r = automation.submit_report("manual", body.periode)
+    return await _respond(job_queue.job_info(r["job_id"]), wait, timeout)
+
+
+@app.get("/v1/reports/{report_id}/pdf", tags=["otomasi"], dependencies=[Depends(require_key)])
+async def report_pdf(report_id: str):
+    r = db.query_one("SELECT pdf_path, period_label FROM reports WHERE id=?", (report_id,))
+    if not r or not Path(r["pdf_path"]).exists():
+        raise HTTPException(404, "laporan tidak ditemukan")
+    return FileResponse(r["pdf_path"], media_type="application/pdf", filename=Path(r["pdf_path"]).name,
+                        content_disposition_type="inline")
+
+
+@app.get("/v1/artifacts/{artifact_id}", tags=["trace"], dependencies=[Depends(require_key)])
+async def artifact(artifact_id: str):
+    """Grafik PNG yang dibuat sub-agen analis (`analisis_data`). Untuk `<img>` pakai `?key=API_KEY`."""
+    r = db.query_one("SELECT path FROM artifacts WHERE id=?", (artifact_id,))
+    if not r or not Path(r["path"]).exists():
+        raise HTTPException(404, "artefak tidak ditemukan")
+    return _file_response(Path(r["path"]), "image/png")
+
+
+@app.get("/v1/automations", tags=["otomasi"], dependencies=[Depends(require_key)])
+async def get_automations():
+    return {"enabled": settings.automation_enabled, "timezone": settings.timezone, "tasks": automation.list_automations()}
+
+
+@app.post("/v1/automations/{name}/run", tags=["otomasi"], dependencies=[Depends(rate_limit)])
+async def run_automation(name: str, periode: str | None = Query(None, description="khusus laporan: minggu_lalu|bulan_lalu|...")):
+    """Jalankan satu otomasi sekarang (tidak menggeser jadwal rutinnya)."""
+    if name not in automation.TASKS:
+        raise HTTPException(404, f"otomasi tidak dikenal. Pilihan: {', '.join(automation.TASKS)}")
+    return await automation.run_task(name, manual=True, periode=periode)
+
+
+@app.get("/v1/fx", tags=["otomasi"], dependencies=[Depends(require_key)])
+async def fx_rate(dari: str = "USD", ke: str = "IDR", jumlah: float = 1, tanggal: str | None = None):
+    """Uji alat eksternal kurs (sama dengan tool konversi_kurs milik agent)."""
+    from .services import fx
+    try:
+        return await fx.convert(jumlah, dari, ke, tools.parse_date(tanggal) if tanggal else None)
+    except (fx.FxError, tools.ToolError) as e:
+        raise HTTPException(502, str(e)) from e
 
 
 # ------------------------------------------------------------------ metrik

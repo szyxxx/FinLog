@@ -319,3 +319,140 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
   .sticky-col { position: static; }
   .nav button span { display: none; }
 }
+
+/* ---- layanan baru: grafik analis, otomasi, notifikasi, anggaran ---- */
+.chart-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.chart-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: #fff; border: 1px solid var(--border-subtle); text-decoration: none; }
+.chart-card img { width: 100%; height: auto; border-radius: 6px; display: block; }
+.chart-card span { color: #4b5563; padding: 0 2px 2px; }
+.notif { padding: 10px 12px; border-radius: 10px; background: var(--canvas-inset); border: 1px solid var(--border-subtle); }
+.notif.read { opacity: 0.62; }
+.budget-row { display: flex; flex-direction: column; gap: 6px; }
+.budget-track { position: relative; height: 10px; border-radius: 99px; background: var(--canvas-inset); overflow: hidden; }
+.budget-track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; }
+.budget-track i.proj { background: rgba(245, 180, 84, 0.22); }
+.budget-track .mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-faint); }
+.icon-btn.bell { position: relative; }
+.bell-count { position: absolute; top: 2px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px; background: var(--bad); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+@media (max-width: 720px) { .chart-gallery { grid-template-columns: 1fr; } }
+a.btn { text-decoration: none; }
+.tbl-wrap { overflow-x: auto; max-width: 100%; }
+@media (max-width: 720px) { .budget-row .row { flex-wrap: wrap; } }
+
+/* ---------------------------------------------------------------- responsif (tablet & ponsel) */
+.hero-stats { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 24px; align-items: end; }
+.seg-periods { min-width: 560px; }
+.seg button { white-space: nowrap; }
+.row.wrap > .input, .row.wrap > select.input, .row.wrap > .field { max-width: 100%; }
+img, svg, video, audio { max-width: 100%; }
+pre { max-width: 100%; overflow-x: auto; }
+.answer, .run-input, .notif, .msg pre { overflow-wrap: anywhere; }
+
+@media (max-width: 1100px) {
+  /* Sandbox: input -> hasil run -> daftar run */
+  .grid-sandbox > .sticky-col { display: contents; }
+  .grid-sandbox > .sticky-col > :first-child { order: 1; }
+  .grid-sandbox > .run-col { order: 2; scroll-margin-top: 140px; }
+  .grid-sandbox > .sticky-col > .runs-card { order: 3; }
+  .hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-stats > :first-child { grid-column: 1 / -1; }
+  .tbl-wrap > .tbl { white-space: nowrap; }
+  .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .page-head { flex-wrap: wrap; align-items: flex-start; }
+  .seg-periods { min-width: 0; max-width: 100%; overflow-x: auto; }
+}
+
+@media (max-width: 860px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; border-radius: 22px; padding: 8px 8px 8px 14px; top: 8px; margin-top: 8px; width: calc(100% - 16px); gap: 8px; }
+  .brand small { display: none; }
+  .nav { order: 10; flex: 1 0 100%; margin-left: 0; justify-content: space-between; }
+  .nav button { flex: 1; justify-content: center; padding: 8px 6px; }
+  .server-pill { padding: 6px 10px; }
+  .server-pill .mono, .server-pill > span:not(.faint) { display: none; }
+  .page { width: calc(100% - 24px); margin: 16px auto 48px; }
+  .page-head h1 { font-size: 24px; }
+  .card.pad-lg { padding: 16px; }
+  .run-hero { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .run-ids { text-align: left !important; word-break: break-all; }
+  .run-input { font-size: 17px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpis > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  /* timeline trace: ikon | nama | durasi | panah */
+  .tl-head { display: none; }
+  .tl-row { grid-template-columns: 30px minmax(0, 1fr) auto 16px; gap: 8px; padding: 8px 6px; }
+  .tl-row > :nth-child(1), .tl-row > :nth-child(4), .tl-row > :nth-child(6) { display: none; }
+  .tl-detail { padding: 4px 10px 12px; }
+  .bar-row { grid-template-columns: minmax(70px, 110px) minmax(0, 1fr) auto; gap: 8px; }
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .kv dt { margin-top: 6px; }
+  .input-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .input-chips .chip { flex: none; }
+  .row.wrap > .input, .row.wrap > select.input, .row.wrap > .field { flex: 1 1 140px; width: auto !important; }
+  .modal { width: calc(100% - 24px) !important; max-height: calc(100vh - 32px); overflow: auto; }
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tabs button { flex: none; white-space: nowrap; }
+  .toast-wrap { left: 12px; right: 12px; }
+  .hero-num { font-size: 36px; }
+  .stat b { font-size: 19px; }
+}
+@media (max-width: 420px) {
+  .brand { font-size: 14px; }
+  .icon-btn { width: 34px; height: 34px; }
+  .kpi { padding: 8px 10px; }
+  .kpi b { font-size: 15px; }
+}
+@media (max-width: 1100px) {
+  .grid-sandbox, .receipt-grid, .two-col, .three-col { grid-template-columns: minmax(0, 1fr); }
+  .grid-sandbox > *, .two-col > *, .three-col > * { min-width: 0; }
+}
+
+@media (max-width: 860px) {
+  /* Tabel transaksi -> kartu: deskripsi | nominal, tanggal | kategori, sumber | aksi */
+  .tbl.tx-table { display: block; white-space: normal; overflow: visible; }
+  .tx-table thead { display: none; }
+  .tx-table tbody { display: block; }
+  .tx-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "desc amt" "date cat" "src act";
+    gap: 2px 12px; padding: 10px 4px; border-bottom: 1px solid var(--border-subtle); align-items: center; }
+  .tx-table td { padding: 0; border: 0; min-width: 0; }
+  .tx-table td:nth-child(1) { display: none; }
+  .tx-table td:nth-child(2) { grid-area: date; font-size: 12px; color: var(--text-faint); }
+  .tx-table td:nth-child(3) { grid-area: desc; }
+  .tx-table td:nth-child(4) { grid-area: cat; justify-self: end; font-size: 12px; }
+  .tx-table td:nth-child(5) { grid-area: src; }
+  .tx-table td:nth-child(6) { grid-area: amt; font-weight: 650; }
+  .tx-table td:nth-child(7) { grid-area: act; }
+}
+
+@media (max-width: 860px) {
+  /* Tabel halaman Otomasi -> kartu */
+  .tbl.card-table { display: block; white-space: normal; overflow: visible; }
+  .card-table thead { display: none; }
+  .card-table tbody { display: block; }
+  .card-table tr { display: grid; gap: 4px 12px; padding: 12px 2px; border-bottom: 1px solid var(--border-subtle); align-items: center; }
+  .card-table tr:last-child { border-bottom: 0; }
+  .card-table td { padding: 0; border: 0; min-width: 0; white-space: normal; }
+  .card-table td.r { text-align: left; }
+  .card-table td[data-label]::before { content: attr(data-label) " "; color: var(--text-faint); font-size: 11px; }
+  /* jadwal: tugas | tombol ; terakhir | berikutnya */
+  .sched-table tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "task act" "last next"; }
+  .sched-table td:nth-child(1) { grid-area: task; }
+  .sched-table td:nth-child(2) { grid-area: last; }
+  .sched-table td:nth-child(3) { grid-area: next; justify-self: end; }
+  .sched-table td:nth-child(4) { grid-area: act; }
+  /* tagihan: nama | nominal ; jatuh tempo | aksi */
+  .bill-table tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name amt" "due act" "freq act"; }
+  .bill-table td:nth-child(1) { grid-area: name; }
+  .bill-table td:nth-child(2) { grid-area: freq; color: var(--text-faint); }
+  .bill-table td:nth-child(3) { grid-area: due; }
+  .bill-table td:nth-child(4) { grid-area: amt; font-weight: 650; }
+  .bill-table td:nth-child(5) { grid-area: act; justify-self: end; }
+  /* laporan: periode | PDF ; jenis+narasi | angka */
+  .report-table tr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "per act" "kind out" "src saldo"; }
+  .report-table td:nth-child(1) { grid-area: per; }
+  .report-table td:nth-child(2) { grid-area: kind; }
+  .report-table td:nth-child(3) { grid-area: src; }
+  .report-table td:nth-child(4) { grid-area: out; justify-self: end; }
+  .report-table td:nth-child(5) { grid-area: saldo; justify-self: end; }
+  .report-table td:nth-child(6) { grid-area: act; }
+  .card-table td[colspan] { grid-column: 1 / -1; }
+}

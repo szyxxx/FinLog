@@ -35,7 +35,7 @@ export function HistoryPage() {
             {active.filter((j) => j.status === "queued").map((j) => <Badge key={j.id} tone="muted">#{j.queue_position} · {INPUT_LABEL[j.input_type]} · {j.id}</Badge>)}
           </div>
         )}
-        <table className="tbl">
+        <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>Job</th><th>Input</th><th>Status</th><th>Posisi</th><th>Dibuat</th><th className="r">Tunggu</th><th className="r">Proses</th></tr></thead>
           <tbody>
             {(q?.jobs ?? []).slice(0, 12).map((j) => (
@@ -50,7 +50,7 @@ export function HistoryPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
         {jobs.error && <div className="banner err">{jobs.error}</div>}
       </section>
 
@@ -69,7 +69,7 @@ export function HistoryPage() {
           <span className="grow" /><span className="small muted">{runs.data?.length ?? 0} run</span>
         </div>
         {runs.error && <div className="banner err">{runs.error}</div>}
-        <table className="tbl">
+        <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>Waktu</th><th>Input</th><th>Isi</th><th>Status</th><th>Outcome</th><th className="r">Durasi</th><th className="r">LLM / tool</th><th className="r">Token</th></tr></thead>
           <tbody>
             {(runs.data ?? []).map((r) => (
@@ -85,7 +85,7 @@ export function HistoryPage() {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       </section>
     </div>
   );

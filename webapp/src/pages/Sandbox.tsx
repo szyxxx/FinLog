@@ -9,6 +9,10 @@ import type { RunSummary } from "../api/types";
 export function runTitle(r: RunSummary) {
   if (r.input_type === "text") return r.input_text?.trim() || "(teks kosong)";
   const txt = r.input_text ?? "";
+  if (r.input_type === "automation") {
+    const m = txt.match(/laporan keuangan (\w+) untuk periode (\w+)/i);
+    return m ? `Otomasi · laporan ${m[1]} (${m[2].replace("_", " ")})` : "Otomasi terjadwal";
+  }
   // /v1/runs (RunListItem) tidak membawa input_meta, jadi judul diambil dari input_text.
   if (r.input_type === "receipt") {
     const m = txt.match(/\{[\s\S]*\}/);
@@ -42,12 +46,16 @@ export function SandboxPage() {
     <div className="grid-sandbox">
       <div className="stack sticky-col">
         <InputPanel conversationId={selRun?.conversation_id} onSubmitted={(id) => go({ page: "sandbox", run: id })} />
-        <section className="card" style={{ padding: 8 }}>
+        <section className="card runs-card" style={{ padding: 8 }}>
           <div className="card-title" style={{ padding: "8px 8px 0" }}><h2>Run terbaru</h2><button className="btn ghost sm" onClick={() => go({ page: "riwayat" })}>Semua</button></div>
           {runs.error && <div className="banner err" style={{ margin: 8 }}>{runs.error}</div>}
           <div style={{ maxHeight: 430, overflow: "auto" }}>
             {(runs.data ?? []).map((r) => (
-              <div key={r.id} className={`run-item ${r.id === selected ? "on" : ""}`} onClick={() => go({ page: "sandbox", run: r.id })}>
+              <div key={r.id} className={`run-item ${r.id === selected ? "on" : ""}`} onClick={() => {
+                go({ page: "sandbox", run: r.id });
+                // Di layar sempit kolom run ada di bawah daftar; gulir ke sana agar hasil klik terlihat.
+                if (window.matchMedia("(max-width: 1100px)").matches) setTimeout(() => document.querySelector(".run-col")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+              }}>
                 <span className="type-ic"><InputIcon type={r.input_type} size={14} /></span>
                 <div style={{ minWidth: 0 }}>
                   <div className="t">{runTitle(r)}</div>
@@ -62,7 +70,7 @@ export function SandboxPage() {
           </div>
         </section>
       </div>
-      <div style={{ minWidth: 0 }}>
+      <div className="run-col" style={{ minWidth: 0 }}>
         {selected ? <RunView runId={selected} openStep={route.step} onSubmitted={(id) => go({ page: "sandbox", run: id })} />
           : <div className="card empty">Pilih atau buat run.</div>}
       </div>

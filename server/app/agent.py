@@ -18,7 +18,9 @@ from .trace import Tracer, publish
 from .util import err
 
 log = logging.getLogger("agent")
-WRITE_TOOLS = {"catat_transaksi", "ubah_transaksi", "hapus_transaksi"}
+WRITE_TOOLS = {"catat_transaksi", "ubah_transaksi", "hapus_transaksi", "bayar_tagihan", "atur_anggaran", "tambah_tagihan"}
+CREATE_TOOLS = {"catat_transaksi", "bayar_tagihan"}
+TOOL_ERRORS = (tools.ToolError, KeyError, ValueError, TypeError)
 
 CLAIM_RE = re.compile(
     r"(berhasil|sudah|telah)\s+(saya\s+)?(di|ter)?(catat|simpan|ubah|hapus)"
@@ -41,6 +43,26 @@ NUDGE = ("[PESAN SISTEM] Jawabanmu mengklaim data sudah dicatat/diubah/dihapus, 
          "memanggil tool tulis; cukup tulis ulang jawabanmu tanpa mengklaim telah mencatat.")
 
 
+NUDGE_EMPTY = ("[PESAN SISTEM] Giliranmu berakhir tanpa jawaban dan tanpa memanggil tool. Lanjutkan sekarang: panggil tool "
+               "yang kamu rencanakan (mis. daftar_tagihan, cari_transaksi, minta_konfirmasi), atau tulis jawaban untuk pengguna.")
+
+
+NUDGE_FX = ("[PESAN SISTEM] Kurs sudah didapat dari konversi_kurs, tetapi transaksinya BELUM dicatat. Pengguna melaporkan "
+            "transaksi, bukan bertanya. Panggil catat_transaksi sekarang (jumlah = hasil rupiah, mata_uang_asli, jumlah_asli, "
+            "kurs; tanggal kosong = hari ini). Jangan bertanya lagi.")
+TX_INTENT_RE = re.compile(r"\b(beli|bayar|belanja|makan|minum|jajan|habis|tadi|kemarin|keluar|dapat|terima|transfer|"
+                          r"isi|top ?up|langganan|sewa|pesan|order)\b", re.I)
+
+
+def fx_followup_nudge(ctx: dict, user_content: str) -> str | None:
+    """Penjaga: konversi_kurs berhasil, pesan pengguna jelas transaksi, tetapi belum ada tool tulis -> tegur sekali."""
+    if ctx.get("fx_ok") and not ctx.get("ok_writes") and not ctx.get("nudged_fx") \
+            and TX_INTENT_RE.search(user_content or "") and not re.search(r"\bkurs\b|\bberapa\b", user_content or "", re.I):
+        ctx["nudged_fx"] = True
+        return NUDGE_FX
+    return None
+
+
 def system_prompt() -> str:
     now = db.now_local()
     cats = "\n".join(f"- {n} ({k}): {d}" for n, k, d in db.CATEGORIES)
@@ -51,6 +73,22 @@ Tugasmu:
 1. Mencatat pemasukan/pengeluaran dari pesan pengguna, hasil transkripsi voice note, hasil ekstraksi struk, atau email notifikasi.
 2. Menjawab pertanyaan tentang keuangan dengan memakai tool (ringkasan, cari_transaksi). Jangan mengarang angka.
 3. Mengubah atau menghapus transaksi bila diminta (cari dulu id-nya dengan cari_transaksi).
+4. Layanan tambahan:
+   - Mata uang asing ("5 dolar", "2000 yen", "SGD 12"): panggil konversi_kurs (alat internet) dulu, lalu catat_transaksi
+     dengan jumlah = hasil rupiah dan isi mata_uang_asli, jumlah_asli, kurs, tanpa bertanya lagi (tanggal kosong = hari
+     ini). Sebutkan kurs dan sumbernya.
+   - Pertanyaan analisis (tren, perbandingan antarbulan, rata-rata, prediksi, persentase, "paling boros", grafik):
+     panggil analisis_data. Pertanyaan total/daftar sederhana cukup dengan ringkasan atau cari_transaksi.
+   - Anggaran: atur_anggaran untuk menetapkan batas bulanan, cek_anggaran untuk sisa/proyeksi.
+   - Tagihan rutin/langganan: tambah_tagihan (mendaftarkan pengingat), daftar_tagihan, bayar_tagihan (mencatat bayar),
+     deteksi_langganan (cari pengeluaran berulang yang belum didaftarkan). Bila pengguna bilang sudah membayar sesuatu
+     yang mungkin tagihan terdaftar (kos, UKT, listrik, internet, langganan) tanpa nominal, panggil daftar_tagihan dulu;
+     bila cocok, pakai bayar_tagihan (nominal diambil dari tagihan).
+   - Laporan: fakta_laporan lalu buat_laporan dengan narasi yang hanya memakai angka dari fakta.
+   - Bila hasil tool memuat peringatan_anggaran, sampaikan ke pengguna.
+   - Angka dalam jawaban HARUS berasal dari hasil tool. Jangan menambah perkiraan/proyeksi sendiri; bila perlu
+     proyeksi, minta analisis_data menghitungnya. Satu pertanyaan analisis = satu panggilan analisis_data berisi
+     semua bagian pertanyaan.
 
 Aturan:
 - Nominal dalam rupiah bilangan bulat: "30rb" = 30000, "4,5 juta" = 4500000, "1.250.000" = 1250000.
@@ -266,6 +304,9 @@ async def _preprocess(run_id: str, input_type: str, payload: dict, tr: Tracer, c
                              {"role": "assistant", "content": q}])
         return content
 
+    if input_type == "automation":
+        return automation_content(payload, ctx)
+
     if input_type == "email":
         raw = Path(payload["eml_path"]).read_bytes()
         async with tr.timed("preprocess", "baca_email", {"file": Path(payload["eml_path"]).name,
@@ -289,14 +330,74 @@ def _rp(v) -> str:
     return f"Rp{int(v):,}".replace(",", ".")
 
 
+def automation_content(payload: dict, ctx: dict) -> str:
+    """Pesan untuk run otomasi terjadwal (tanpa pengguna): instruksi tugas dari penjadwal."""
+    ctx["automation"] = payload.get("task")
+    if payload.get("report_kind"):
+        ctx["report_kind"] = payload["report_kind"]
+    return ("[OTOMASI TERJADWAL - tidak ada pengguna yang menunggu, jangan bertanya balik dan jangan memanggil "
+            f"minta_konfirmasi]\nTugas: {payload.get('instruksi') or payload.get('task')}")
+
+
+async def run_tool(name: str, args: dict, ctx: dict, tr: Tracer, totals: dict) -> tuple[dict, str]:
+    """Jalankan satu tool + catat step trace + perbarui ctx (dipakai kedua mesin)."""
+    totals["tool_calls"] += 1
+    t0 = time.time()
+    tr.started("tool", name, t0)
+    try:
+        result = await tools.execute_tool_async(name, args, ctx, tr)
+        st = "ok"
+    except TOOL_ERRORS as e:
+        result = {"ok": False, "error": str(e),
+                  "instruksi": "GAGAL, data BELUM tersimpan. Perbaiki argumen lalu panggil tool lagi, "
+                               "atau sampaikan kegagalan ini ke pengguna. Jangan bilang berhasil."}
+        st = "error"
+        if name in WRITE_TOOLS:
+            ctx["failed_writes"] = [*ctx.get("failed_writes", []), name]
+    if st == "ok" and name in WRITE_TOOLS:
+        ctx["ok_writes"] = ctx.get("ok_writes", 0) + 1
+        ctx["write_results"] = [*ctx.get("write_results", []), [name, result]]
+        if name in CREATE_TOOLS:
+            ctx["created"] = ctx.get("created", 0) + 1
+    if st == "ok" and name != "minta_konfirmasi":
+        ctx["ok_tools"] = ctx.get("ok_tools", 0) + 1
+    if st == "ok" and name == "konversi_kurs":
+        ctx["fx_ok"] = True
+    tr.add("tool", name, args, result, status=st, started_at=t0, duration_ms=int((time.time() - t0) * 1000))
+    return result, st
+
+
+async def automation_fallback(input_type: str, payload: dict, ctx: dict, tr: Tracer) -> str | None:
+    """Jaring pengaman otomasi laporan: bila agent tidak berhasil membuat laporan, buat dengan narasi templat."""
+    if input_type != "automation" or payload.get("task") != "laporan" or ctx.get("report_id"):
+        return None
+    from .services import reports
+    t0 = time.time()
+    try:
+        r = await asyncio.to_thread(reports.create_report, payload.get("periode"), None, ctx.get("run_id"),
+                                    payload.get("report_kind"), None, None, "template")
+    except Exception as e:  # noqa: BLE001
+        tr.add("guard", "laporan_cadangan", {"periode": payload.get("periode")}, {"error": err(e)}, status="error",
+               started_at=t0, duration_ms=int((time.time() - t0) * 1000))
+        return None
+    ctx["report_id"] = r["id"]
+    tr.add("guard", "laporan_cadangan", {"periode": payload.get("periode"),
+                                         "alasan": "agent tidak menghasilkan laporan yang lolos pemeriksaan angka"},
+           {"laporan": r, "tindakan": "laporan dibuat dengan narasi templat"}, status="warning",
+           started_at=t0, duration_ms=int((time.time() - t0) * 1000))
+    return f"Laporan {r['periode']['label']} dibuat dengan narasi templat (id {r['id']})."
+
+
 def fallback_answer(ctx: dict) -> str:
     """Ringkasan deterministik dari hasil tool tulis, dipakai bila LLM tidak menghasilkan teks jawaban."""
     lines = []
     for name, res in ctx.get("write_results", []):
         if name == "catat_transaksi":
             t = res["transaksi"]
-            lines.append(f"Tercatat #{t['id']}: {t['kind']} {_rp(t['amount'])} ({t['category']}) - {t.get('description') or ''}, "
-                         f"tanggal {t['date']}.")
+            fx = (f" (= {t['orig_currency']} {t['orig_amount']:g} x kurs {t['fx_rate']:g})"
+                  if t.get("orig_currency") and t.get("orig_amount") and t.get("fx_rate") else "")
+            lines.append(f"Tercatat #{t['id']}: {t['kind']} {_rp(t['amount'])}{fx} ({t['category']}) - "
+                         f"{t.get('description') or ''}, tanggal {t['date']}.")
         elif name == "ubah_transaksi":
             a, b = res["sebelum"], res["sesudah"]
             diff = [f"{k} {_rp(a[k]) if k == 'amount' else a[k]} -> {_rp(b[k]) if k == 'amount' else b[k]}"
@@ -305,6 +406,18 @@ def fallback_answer(ctx: dict) -> str:
         elif name == "hapus_transaksi":
             t = res["dihapus"]
             lines.append(f"Transaksi #{t['id']} dihapus ({t.get('description') or t['category']}, {_rp(t['amount'])}).")
+        elif name == "bayar_tagihan":
+            t, b = res["transaksi"], res["tagihan"]
+            lines.append(f"Pembayaran {b['name']} {_rp(t['amount'])} tercatat (#{t['id']}); jatuh tempo berikutnya {b['next_due']}.")
+        elif name == "atur_anggaran":
+            b = res["anggaran"]
+            lines.append(f"Anggaran {b['kategori']} diatur {_rp(b['batas'])}/bulan (terpakai {b['persen']}%).")
+        elif name == "tambah_tagihan":
+            b = res["tagihan"]
+            lines.append(f"Tagihan {b['name']} {_rp(b['amount'])} ({b['frequency']}) terdaftar, jatuh tempo {b['next_due']}.")
+        lines += [w for w in (res.get("peringatan_anggaran") or []) if w not in lines]
+    if ctx.get("report_id"):
+        lines.append(f"Laporan dibuat (id {ctx['report_id']}).")
     return " ".join(lines) or "Selesai, tetapi model tidak memberikan jawaban teks. Lihat langkah-langkah trace."
 
 
@@ -313,6 +426,8 @@ def _outcome(status: str, input_type: str, ctx: dict) -> str:
     duplicate | possible_duplicate | error."""
     if status == "awaiting_confirmation":
         return "needs_confirmation"
+    if ctx.get("report_id"):
+        return "report"
     if ctx.get("created"):
         return "recorded"
     if ctx.get("ok_writes"):
@@ -354,7 +469,7 @@ async def run_agent(run_id: str) -> None:
         messages = [{"role": "system", "content": system_prompt()}, *history, {"role": "user", "content": user_content}]
 
         for step_no in range(1, s.agent_max_steps + 1):
-            res = await llm_step(tr, f"agent_step_{step_no}", messages, tools=tools.TOOL_SPECS)
+            res = await llm_step(tr, f"agent_step_{step_no}", messages, tools=tools.tools_for(input_type))
             msg = res["message"]
             totals["prompt"] += res["prompt_tokens"]
             totals["completion"] += res["completion_tokens"]
@@ -374,6 +489,19 @@ async def run_agent(run_id: str) -> None:
                            {"tindakan": "model diminta memanggil tool", "pesan": NUDGE}, status="warning")
                     messages.append({"role": "user", "content": NUDGE})
                     continue
+                fxn = fx_followup_nudge(ctx, user_content) if step_no < s.agent_max_steps else None
+                if fxn:
+                    tr.add("guard", "kurs_belum_dicatat", {"jawaban_model": text},
+                           {"tindakan": "model diminta mencatat transaksi", "pesan": fxn}, status="warning")
+                    messages.append({"role": "user", "content": fxn})
+                    continue
+                if not text and not ctx.get("ok_tools") and not ctx.get("nudged_empty") and step_no < s.agent_max_steps:
+                    # Model berpikir akan memanggil tool tetapi menutup giliran tanpa tool call maupun teks.
+                    ctx["nudged_empty"] = True
+                    tr.add("guard", "jawaban_kosong_tanpa_tool", {"content": msg.get("content")},
+                           {"tindakan": "model diminta melanjutkan", "pesan": NUDGE_EMPTY}, status="warning")
+                    messages.append({"role": "user", "content": NUDGE_EMPTY})
+                    continue
                 if not text:
                     # Dengan thinking aktif, model kadang menutup giliran hanya dengan reasoning tanpa teks jawaban.
                     text = fallback_answer(ctx)
@@ -392,26 +520,7 @@ async def run_agent(run_id: str) -> None:
                         args = json.loads(args)
                     except json.JSONDecodeError:
                         args = {"_raw": args}
-                totals["tool_calls"] += 1
-                t0 = time.time()
-                try:
-                    result = tools.execute_tool(name, args, ctx)
-                    st = "ok"
-                except (tools.ToolError, KeyError, ValueError, TypeError) as e:
-                    result = {"ok": False, "error": str(e),
-                              "instruksi": "GAGAL, data BELUM tersimpan. Perbaiki argumen lalu panggil tool lagi, "
-                                           "atau sampaikan kegagalan ini ke pengguna. Jangan bilang berhasil."}
-                    st = "error"
-                    if name in WRITE_TOOLS:
-                        ctx.setdefault("failed_writes", []).append(name)
-                if st == "ok" and name in WRITE_TOOLS:
-                    ctx["ok_writes"] = ctx.get("ok_writes", 0) + 1
-                    ctx.setdefault("write_results", []).append((name, result))
-                    if name == "catat_transaksi":
-                        ctx["created"] = ctx.get("created", 0) + 1
-                if st == "ok" and name != "minta_konfirmasi":
-                    ctx["ok_tools"] = ctx.get("ok_tools", 0) + 1
-                tr.add("tool", name, args, result, status=st, started_at=t0, duration_ms=int((time.time() - t0) * 1000))
+                result, _st = await run_tool(name, args, ctx, tr, totals)
                 messages.append({"role": "tool", "tool_name": name, "content": json.dumps(result, ensure_ascii=False, default=str)})
                 if name == "minta_konfirmasi":
                     confirmation = args
@@ -425,7 +534,10 @@ async def run_agent(run_id: str) -> None:
         else:
             answer = answer or "Maaf, batas langkah agent tercapai sebelum selesai."
             status = "done"
-        if status == "done" and answer and "?" in answer and not ctx.get("ok_tools") and input_type != "email":
+        fb = await automation_fallback(input_type, payload, ctx, tr)
+        if fb:
+            answer = f"{answer}\n{fb}" if answer else fb
+        if status == "done" and answer and "?" in answer and not ctx.get("ok_tools") and input_type not in ("email", "automation"):
             # Model bertanya lewat teks biasa (bukan tool minta_konfirmasi): tetap perlakukan sebagai menunggu konfirmasi.
             status = "awaiting_confirmation"
             tr.add("confirmation", "pertanyaan_teks", None,

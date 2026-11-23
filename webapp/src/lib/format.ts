@@ -1,5 +1,5 @@
 export const rp = (n: number | null | undefined) =>
-  n === null || n === undefined ? "–" : `Rp${Math.round(n).toLocaleString("id-ID")}`;
+  n === null || n === undefined ? "–" : `${n < 0 ? "-" : ""}Rp${Math.abs(Math.round(n)).toLocaleString("id-ID")}`;
 
 export const rpShort = (n: number) => {
   const a = Math.abs(n);
@@ -63,6 +63,7 @@ export const CAT_LABEL: Record<string, string> = {
   makanan_minuman: "Makanan & minuman", transportasi: "Transportasi", belanja: "Belanja", tagihan: "Tagihan",
   kesehatan: "Kesehatan", pendidikan: "Pendidikan", hiburan: "Hiburan", transfer_keluar: "Transfer keluar",
   lainnya_keluar: "Lainnya (keluar)", gaji: "Gaji", transfer_masuk: "Transfer masuk", lainnya_masuk: "Lainnya (masuk)",
+  _total: "Total pengeluaran",
 };
 export const catLabel = (c: string) => CAT_LABEL[c] ?? c;
 
@@ -82,6 +83,7 @@ export const OUTCOME: Record<string, { label: string; tone: Tone }> = {
   duplicate: { label: "Duplikat", tone: "muted" },
   possible_duplicate: { label: "Mungkin duplikat", tone: "warn" },
   needs_confirmation: { label: "Perlu konfirmasi", tone: "warn" },
+  report: { label: "Laporan dibuat", tone: "ok" },
   error: { label: "Gagal", tone: "bad" },
 };
 
@@ -97,7 +99,7 @@ export const STATUS: Record<string, { label: string; tone: Tone }> = {
 export type Tone = "ok" | "warn" | "bad" | "info" | "muted" | "live";
 
 // "email" tetap ada agar run lama bisa diberi label; filter hanya menawarkan input yang masih didukung.
-export const INPUT_LABEL: Record<string, string> = { text: "Teks", receipt: "Struk", voice: "Suara", email: "Email" };
-export const ACTIVE_INPUTS = ["text", "receipt", "voice"] as const;
+export const INPUT_LABEL: Record<string, string> = { text: "Teks", receipt: "Struk", voice: "Suara", email: "Email", automation: "Otomasi" };
+export const ACTIVE_INPUTS = ["text", "receipt", "voice", "automation"] as const;
 
 export const json = (v: unknown) => JSON.stringify(v, null, 2);

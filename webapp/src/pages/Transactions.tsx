@@ -28,12 +28,12 @@ export function TransactionsPage() {
     <div className="stack" style={{ gap: 20 }}>
       <div className="page-head">
         <div><h1>Transaksi</h1><p>CRUD langsung ke <span className="mono">/v1/transactions</span> (tanpa agent) dan ringkasan dari <span className="mono">/v1/summary</span>.</p></div>
-        <div className="seg" style={{ minWidth: 560 }}>
+        <div className="seg seg-periods">
           {PERIODS.map(([k, l]) => <button key={k} className={periode === k ? "on" : ""} onClick={() => setPeriode(k)}>{l}</button>)}
         </div>
       </div>
 
-      <section className="card pad-lg" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr", gap: 24, alignItems: "end" }}>
+      <section className="card pad-lg hero-stats">
         <div>
           <div className="label">Saldo periode</div>
           <div className="hero-num" style={{ marginTop: 10, color: (s?.saldo ?? 0) < 0 ? "var(--bad)" : "var(--text-base)" }}>{s ? rp(s.saldo) : "–"}</div>
@@ -92,7 +92,7 @@ export function TransactionsPage() {
           <button className="btn primary" onClick={() => setEdit("new")}><Plus size={15} /> Tambah manual</button>
         </div>
         {list.error && <div className="banner err">{list.error}</div>}
-        <table className="tbl">
+        <table className="tbl tx-table">
           <thead><tr><th>#</th><th>Tanggal</th><th>Deskripsi</th><th>Kategori</th><th>Sumber</th><th className="r">Jumlah</th><th /></tr></thead>
           <tbody>
             {(list.data?.transaksi ?? []).map((t) => (

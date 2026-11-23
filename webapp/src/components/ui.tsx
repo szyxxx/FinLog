@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { AudioLines, Image, Mail, MessageSquareText } from "lucide-react";
+import { AudioLines, Bot, Image, Mail, MessageSquareText } from "lucide-react";
 import { OUTCOME, STATUS, type Tone, json as toJson } from "../lib/format";
 
 export function Badge({ tone = "muted", children, dot }: { tone?: Tone; children: ReactNode; dot?: boolean }) {
@@ -18,7 +18,7 @@ export function OutcomeBadge({ outcome }: { outcome: string | null | undefined }
 }
 
 export function InputIcon({ type, size = 15 }: { type: string; size?: number }) {
-  const C = type === "receipt" ? Image : type === "voice" ? AudioLines : type === "email" ? Mail : MessageSquareText;
+  const C = type === "receipt" ? Image : type === "voice" ? AudioLines : type === "email" ? Mail : type === "automation" ? Bot : MessageSquareText;
   return <C size={size} strokeWidth={2} />;
 }
 

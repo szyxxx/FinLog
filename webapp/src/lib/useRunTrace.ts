@@ -35,7 +35,13 @@ export function useRunTrace(client: ApiClient, runId: string | undefined, onFini
     client.run(runId).then((r) => {
       if (!alive) return;
       setT((p) => ({ ...p, run: r, steps: (r.steps ?? []).reduce(upsert, p.steps) }));
-    }).catch((e) => alive && setT((p) => ({ ...p, error: (e as Error).message })));
+    }).catch((e) => {
+      if (!alive) return;
+      const status = (e as { status?: number }).status;
+      const msg = status === 404 ? `Run ${runId} tidak ditemukan (mungkin sudah dihapus). Pilih run lain di daftar.` : (e as Error).message;
+      if (status === 404) close?.();
+      setT((p) => ({ ...p, error: msg, streaming: false }));
+    });
 
     close = client.streamRun(runId, (e) => {
       if (!alive) return;
@@ -68,7 +74,7 @@ export function useRunTrace(client: ApiClient, runId: string | undefined, onFini
             return p;
         }
       });
-    }, (msg) => alive && setT((p) => (p.streaming ? { ...p, error: msg } : p)));
+    }, (msg) => alive && setT((p) => (p.streaming && !p.error ? { ...p, error: msg } : p)));
 
     return () => { alive = false; close?.(); };
   }, [client, runId]);

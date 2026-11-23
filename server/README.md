@@ -12,7 +12,39 @@ lengkap tiap run (REST + SSE), antrean job satu GPU, dan endpoint metrik. Kontra
 | Vision (struk) | Model yang sama (`qwen3.5:9b`) dengan output JSON schema (`format`) |
 | Speech-to-text | faster-whisper `small` di GPU (int8_float16, ~0,5 GB VRAM), fallback otomatis ke CPU |
 | Email | **Nonaktif** (`EMAIL_ENABLED=false`). Kode parser `.eml` + IMAP tetap ada |
-| Database | SQLite (`data/finance.db`): transaksi, job, run, step trace |
+| Database | SQLite (`data/finance.db`): transaksi, job, run, step trace, anggaran, tagihan, notifikasi, laporan, artefak, cache kurs |
+| Sub-agen analis (v2) | Model yang sama menulis kode pandas/matplotlib → pemeriksa AST + logika → sandbox `python -I` (rlimit, tanpa jaringan) → perbaiki sendiri bila error |
+| Alat eksternal (v2) | Kurs Frankfurter (ECB), cadangan open.er-api.com, cache `fx_cache` |
+| Otomasi (v2) | Penjadwal asyncio di server: cek harian, deteksi langganan, laporan PDF mingguan/bulanan (reportlab) |
+
+## Layanan baru (versi 2.0)
+
+Ringkasnya ada di [README utama](../README.md#layanan-baru-versi-20); kontrak lengkap di
+[`../docs/api.md`](../docs/api.md#layanan-baru-v02). Tool agent sekarang 16: 6 lama + `konversi_kurs`, `analisis_data`,
+`atur_anggaran`, `cek_anggaran`, `tambah_tagihan`, `daftar_tagihan`, `bayar_tagihan`, `deteksi_langganan`,
+`fakta_laporan`, `buat_laporan`.
+
+| `.env` | Bawaan | Arti |
+|---|---|---|
+| `FX_ENABLED` | `true` | Alat kurs online (hanya kode mata uang + tanggal yang keluar) |
+| `ANALYSIS_MAX_ATTEMPTS` / `ANALYSIS_TIMEOUT_S` / `ANALYSIS_THINK` | `3` / `25` / `false` | Percobaan tulis-jalankan-perbaiki, batas waktu sandbox, thinking sub-agen |
+| `AUTOMATION_ENABLED` / `AUTOMATION_DAILY_HOUR` | `true` / `7` | Penjadwal dan jam cek harian (zona `TIMEZONE`) |
+| `REPORT_WEEKLY_ENABLED` / `REPORT_MONTHLY_ENABLED` | `true` | Laporan Senin (minggu lalu) / tanggal 1 (bulan lalu) |
+| `BILL_REMIND_DAYS` | `3` | Pengingat H-n sebelum jatuh tempo |
+| `AGENT_MAX_STEPS` | `8` | Naik dari 6 karena laporan butuh beberapa putaran tool |
+
+Penjaga baru: `jawaban_kosong_tanpa_tool` (model berhenti tanpa tool/teks → diminta lanjut sekali),
+`kurs_belum_dicatat` (kurs didapat tetapi transaksi tidak dicatat → ditegur sekali), penjaga angka di `buat_laporan`,
+dan `laporan_cadangan` (PDF dengan narasi templat bila agen gagal).
+
+```bash
+uv run python scripts/seed_demo.py              # data demo ±4 bulan + anggaran + tagihan (DB dicadangkan otomatis)
+uv run python scripts/smoke_services.py         # 20 cek tanpa LLM (sandbox, penjaga angka, endpoint, kurs)
+uv run python scripts/smoke_services.py --llm   # + 5 skenario agent dengan model lokal (beberapa menit)
+```
+
+Saat server pertama kali hidup, penjadwal mengejar slot yang belum pernah dijalankan (termasuk laporan minggu lalu dan
+bulan lalu), jadi GPU langsung sibuk ±1-2 menit.
 
 ## Menjalankan
 
@@ -233,9 +265,11 @@ server/
   app/trace.py       perekam step + event bus SSE
   app/jobqueue.py    antrean FIFO satu worker
   app/metrics.py     latency, token/s, antrean, nvidia-smi
+  app/services/      fx.py (alat kurs), analyst.py + sandbox_runner.py (sub-agen analis), planning.py (anggaran,
+                     tagihan, langganan, notifikasi), reports.py (fakta, penjaga angka, PDF), automation.py (penjadwal)
   app/inputs/        receipt.py (pipeline struk 3 mode), ocr.py (RapidOCR CPU), receipt_rules.py (parser + validasi),
                      stt.py (whisper), email_in.py (.eml/IMAP)
-  scripts/           make_samples.py, tts_espeak.py, smoke_test.py, bench_receipt.py
+  scripts/           make_samples.py, tts_espeak.py, smoke_test.py, bench_receipt.py, seed_demo.py, smoke_services.py
   samples/           data uji fiktif
   data/              SQLite, upload, log (tidak di-commit)
 ```

@@ -2,7 +2,7 @@
 
 Graf yang sama perilakunya dengan loop custom di app/agent.py, tetapi setiap tahap adalah node graf:
 
-    masuk -> praproses per jenis input (teks | suara_stt |
+    masuk -> praproses per jenis input (teks | otomasi | suara_stt |
              struk_dedup -> struk_ocr -> [struk_aturan] -> struk_llm_teks -> struk_validasi -> [struk_vision]
              -> struk_hasil -> struk_serupa)
           -> konteks -> agent <-> tools ; agent -> guard -> (agent | selesai) ; tools -> selesai
@@ -41,7 +41,8 @@ from .util import err  # noqa: E402
 log = logging.getLogger("graph_agent")
 
 # Kunci ctx yang berlaku per run (direset saat jawaban konfirmasi melanjutkan thread).
-_PER_RUN_CTX = ("created", "ok_writes", "ok_tools", "nudged", "write_results", "failed_writes", "usage_extra")
+_PER_RUN_CTX = ("created", "ok_writes", "ok_tools", "nudged", "write_results", "failed_writes", "usage_extra",
+                "report_id", "artifacts", "report_rejections", "nudged_empty", "fx_ok", "nudged_fx")
 
 
 class State(TypedDict, total=False):
@@ -104,7 +105,7 @@ async def n_masuk(state: State, rt: Rt) -> dict:
 
 
 def r_masuk(state: State) -> str:
-    return {"text": "teks", "voice": "suara_stt", "receipt": "struk_dedup"}.get(
+    return {"text": "teks", "voice": "suara_stt", "receipt": "struk_dedup", "automation": "otomasi"}.get(
         state["input_type"], "teks")
 
 
@@ -112,6 +113,13 @@ async def n_teks(state: State, rt: Rt) -> dict:
     if state["input_type"] != "text":
         raise ValueError(f"input_type tidak didukung mesin langgraph: {state['input_type']}")
     return {"user_content": state["payload"]["text"]}
+
+
+async def n_otomasi(state: State, rt: Rt) -> dict:
+    """Run dari penjadwal (laporan mingguan/bulanan, cek tagihan, deteksi langganan): instruksi tugas jadi pesan user."""
+    ctx = dict(state["ctx"])
+    content = A.automation_content(state["payload"], ctx)
+    return {"ctx": ctx, "user_content": content}
 
 
 async def n_suara_stt(state: State, rt: Rt) -> dict:
@@ -374,7 +382,8 @@ async def n_konteks(state: State, rt: Rt) -> dict:
 async def n_agent(state: State, rt: Rt) -> dict:
     step_no = state.get("step_no", 0) + 1
     msgs = [{"role": "system", "content": A.system_prompt()}, *state["messages"]]
-    res = await A.llm_step(rt.context.tracer, f"agent_step_{step_no}", msgs, tools=tools.TOOL_SPECS, chat_fn=lc_llm.chat)
+    res = await A.llm_step(rt.context.tracer, f"agent_step_{step_no}", msgs, tools=tools.tools_for(state["input_type"]),
+                           chat_fn=lc_llm.chat)
     t = rt.context.totals
     t["prompt"] += res["prompt_tokens"]
     t["completion"] += res["completion_tokens"]
@@ -401,6 +410,16 @@ async def n_guard(state: State, rt: Rt) -> dict:
         tr.add("guard", "klaim_tanpa_tool", {"jawaban_model": text},
                {"tindakan": "model diminta memanggil tool", "pesan": A.NUDGE}, status="warning")
         return {"ctx": ctx, "messages": [*state["messages"], {"role": "user", "content": A.NUDGE}], "status": None}
+    fxn = A.fx_followup_nudge(ctx, state.get("user_content") or "") if state["step_no"] < s.agent_max_steps else None
+    if fxn:
+        tr.add("guard", "kurs_belum_dicatat", {"jawaban_model": text},
+               {"tindakan": "model diminta mencatat transaksi", "pesan": fxn}, status="warning")
+        return {"ctx": ctx, "messages": [*state["messages"], {"role": "user", "content": fxn}], "status": None}
+    if not text and not ctx.get("ok_tools") and not ctx.get("nudged_empty") and state["step_no"] < s.agent_max_steps:
+        ctx["nudged_empty"] = True
+        tr.add("guard", "jawaban_kosong_tanpa_tool", {"content": raw},
+               {"tindakan": "model diminta melanjutkan", "pesan": A.NUDGE_EMPTY}, status="warning")
+        return {"ctx": ctx, "messages": [*state["messages"], {"role": "user", "content": A.NUDGE_EMPTY}], "status": None}
     if not text:
         text = A.fallback_answer(ctx)
         tr.add("guard", "jawaban_kosong", {"content": raw},
@@ -425,26 +444,7 @@ async def n_tools(state: State, rt: Rt) -> dict:
                 args = json.loads(args)
             except json.JSONDecodeError:
                 args = {"_raw": args}
-        rt.context.totals["tool_calls"] += 1
-        t0 = time.time()
-        try:
-            result = tools.execute_tool(name, args, ctx)
-            st = "ok"
-        except (tools.ToolError, KeyError, ValueError, TypeError) as e:
-            result = {"ok": False, "error": str(e),
-                      "instruksi": "GAGAL, data BELUM tersimpan. Perbaiki argumen lalu panggil tool lagi, "
-                                   "atau sampaikan kegagalan ini ke pengguna. Jangan bilang berhasil."}
-            st = "error"
-            if name in A.WRITE_TOOLS:
-                ctx["failed_writes"] = [*ctx.get("failed_writes", []), name]
-        if st == "ok" and name in A.WRITE_TOOLS:
-            ctx["ok_writes"] = ctx.get("ok_writes", 0) + 1
-            ctx["write_results"] = [*ctx.get("write_results", []), [name, result]]
-            if name == "catat_transaksi":
-                ctx["created"] = ctx.get("created", 0) + 1
-        if st == "ok" and name != "minta_konfirmasi":
-            ctx["ok_tools"] = ctx.get("ok_tools", 0) + 1
-        tr.add("tool", name, args, result, status=st, started_at=t0, duration_ms=int((time.time() - t0) * 1000))
+        result, _st = await A.run_tool(name, args, ctx, tr, rt.context.totals)
         messages.append({"role": "tool", "tool_name": name, "content": json.dumps(result, ensure_ascii=False, default=str)})
         if name == "minta_konfirmasi":
             confirmation = args
@@ -474,7 +474,12 @@ async def n_selesai(state: State, rt: Rt) -> dict:
         tr.add("final", early["status"], None, {"answer": early["answer"], "outcome": early["outcome"], "warnings": []})
         return {"status": early["status"], "answer": early["answer"], "outcome": early["outcome"], "warnings": []}
     status, answer = state.get("status") or "done", state.get("answer")
-    if status == "done" and answer and "?" in answer and not ctx.get("ok_tools") and state["input_type"] != "email":
+    if state["input_type"] == "automation":
+        ctx = dict(ctx)
+        fb = await A.automation_fallback("automation", state["payload"], ctx, tr)
+        if fb:
+            answer = f"{answer}\n{fb}" if answer else fb
+    if status == "done" and answer and "?" in answer and not ctx.get("ok_tools") and state["input_type"] not in ("email", "automation"):
         status = "awaiting_confirmation"
         tr.add("confirmation", "pertanyaan_teks", None,
                {"pertanyaan": answer, "catatan": "terdeteksi dari jawaban teks (heuristik), bukan dari tool minta_konfirmasi"})
@@ -485,7 +490,7 @@ async def n_selesai(state: State, rt: Rt) -> dict:
         status = "done_with_warnings"
     outcome = A._outcome(status, state["input_type"], ctx)
     tr.add("final", status, None, {"answer": answer, "outcome": outcome, "warnings": warnings})
-    return {"status": status, "answer": answer, "outcome": outcome, "warnings": warnings}
+    return {"status": status, "answer": answer, "outcome": outcome, "warnings": warnings, "ctx": ctx}
 
 
 def r_selesai(state: State) -> str:
@@ -517,7 +522,7 @@ async def n_tunggu_jawaban(state: State, rt: Rt) -> dict:
 def build_graph(checkpointer=None):
     g = StateGraph(State, context_schema=RunContext)
     nodes = {
-        "masuk": n_masuk, "teks": n_teks, "suara_stt": n_suara_stt, "struk_dedup": n_struk_dedup, "struk_ocr": n_struk_ocr,
+        "masuk": n_masuk, "teks": n_teks, "otomasi": n_otomasi, "suara_stt": n_suara_stt, "struk_dedup": n_struk_dedup, "struk_ocr": n_struk_ocr,
         "struk_aturan": n_struk_aturan, "struk_llm_teks": n_struk_llm_teks, "struk_validasi": n_struk_validasi,
         "struk_vision": n_struk_vision, "struk_hasil": n_struk_hasil, "struk_serupa": n_struk_serupa,
         "konteks": n_konteks, "agent": n_agent, "tools": n_tools, "guard": n_guard, "selesai": n_selesai,
@@ -526,8 +531,9 @@ def build_graph(checkpointer=None):
     for name, fn in nodes.items():
         g.add_node(name, _node(name, fn))
     g.add_edge(START, "masuk")
-    g.add_conditional_edges("masuk", r_masuk, ["teks", "suara_stt", "struk_dedup"])
+    g.add_conditional_edges("masuk", r_masuk, ["teks", "suara_stt", "struk_dedup", "otomasi"])
     g.add_edge("teks", "konteks")
+    g.add_edge("otomasi", "konteks")
     g.add_edge("suara_stt", "konteks")
     g.add_conditional_edges("struk_dedup", r_struk_dedup, ["struk_ocr", "struk_vision", "selesai"])
     g.add_conditional_edges("struk_ocr", r_rc_next, ["struk_aturan", "struk_llm_teks", "struk_vision"])

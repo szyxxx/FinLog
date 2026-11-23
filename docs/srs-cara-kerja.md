@@ -8,7 +8,7 @@ Dokumen cara kerja sistem dengan susunan ala SRS (Software Requirements Specific
 | Proyek | Agen AI Pencatat Keuangan Pribadi Berbasis Local AI Server |
 | Mata kuliah | Infrastruktur dan Platform Cerdas |
 | Anggota | Teuku Laksamana Andrian Rahman<br>Axel David |
-| Versi dokumen | 1.0, 10 November 2026 |
+| Versi dokumen | 2.0, 24 November 2026 (perluasan: sub-agen analis, alat eksternal, anggaran, tagihan, otomasi terjadwal, laporan PDF). Versi 1.0: 10 November 2026 |
 | Pembaca sasaran | Mahasiswa yang baru mengenal istilah LLM, tool, dan agent |
 | Isi | Cara kerja sistem, kebutuhan, dan batasan (tanpa kode program) |
 
@@ -38,6 +38,15 @@ Ada tiga cara memberi masukan:
 - **Suara:** merekam atau mengunggah pesan suara.
 
 Sistem juga bisa menjawab pertanyaan ("pengeluaran bulan ini berapa?"), mengubah, dan menghapus catatan. Dua hal membuatnya istimewa. Pertama, **semuanya berjalan di satu laptop**: tidak ada layanan AI di internet (cloud), jadi foto dan suara tidak keluar dari laptop. Kedua, **setiap langkah kerja AI ditampilkan**: apa yang dipikirkan, alat apa yang dipakai, dan berapa lama.
+
+Versi 2.0 menambahkan **layanan baru yang memaksimalkan model lokal**, yaitu hal yang sebelumnya tidak bisa dilakukan sistem:
+
+- **Analis data:** agen menulis dan menjalankan kode Python sendiri untuk menjawab pertanyaan rumit, misalnya tren antarbulan, proyeksi akhir bulan, atau hari paling boros, lengkap dengan grafik.
+- **Alat eksternal:** kurs mata uang online untuk transaksi dalam dolar, yen, atau ringgit.
+- **Anggaran dan tagihan rutin:** batas belanja per kategori, pengingat jatuh tempo, dan deteksi langganan yang belum didaftarkan.
+- **Agen yang bekerja sendiri:** penjadwal di server menjalankan pemeriksaan harian dan menyuruh agen menulis laporan PDF mingguan dan bulanan tanpa diminta.
+
+Penjelasannya ada di Bagian 3.10.
 
 Yang **tidak** termasuk ruang lingkup: akun per pengguna, sinkronisasi dengan bank, dan aplikasi ponsel khusus.
 
@@ -69,7 +78,7 @@ Sistem terdiri dari dua bagian di laptop yang sama: **web app** (halaman web tem
 
 ### 2.2 Fungsi Utama
 
-Fungsinya: mencatat dari teks, foto struk, dan suara; menjawab pertanyaan ringkasan; bertanya balik bila ragu; mengubah dan menghapus catatan; menolak catatan dobel; menampilkan langkah kerja AI; dan memantau laptop. Rinciannya ada di Bab 4.
+Fungsinya: mencatat dari teks, foto struk, dan suara; menjawab pertanyaan ringkasan; bertanya balik bila ragu; mengubah dan menghapus catatan; menolak catatan dobel; menampilkan langkah kerja AI; dan memantau laptop. Sejak versi 2.0 ada juga: analisis data dengan kode dan grafik, konversi kurs mata uang asing, anggaran per kategori, tagihan rutin dengan pengingat, deteksi langganan, dan laporan PDF otomatis. Rinciannya ada di Bab 4.
 
 Transaksi dikelompokkan ke dalam **12 kategori** tetap:
 
@@ -93,7 +102,7 @@ Semua komponen berjalan di **satu laptop**: GPU NVIDIA RTX 5060 Laptop dengan me
 ### 2.5 Batasan Desain
 
 1. **Satu GPU, satu pekerjaan.** Permintaan dikerjakan bergiliran, tidak bersamaan.
-2. **Tanpa cloud.** Model AI, data, dan file unggahan tidak boleh dikirim ke layanan di internet.
+2. **Tanpa AI cloud.** Model AI, data keuangan, dan file unggahan tidak boleh dikirim ke layanan di internet. Satu-satunya alat eksternal (kurs mata uang) hanya menerima kode mata uang dan tanggal, tanpa nominal atau isi transaksi.
 3. **Model berukuran sedang.** Model bahasa yang muat di 8 GB berukuran sekitar 9 miliar parameter (parameter adalah "angka pengetahuan" di dalam model). Model sebesar ini cukup pintar, tetapi kadang keliru. Karena itu sistem menambahkan pemeriksaan oleh program biasa.
 4. **Buku kas bersama.** Belum ada akun per orang. Semua pengguna melihat catatan yang sama.
 
@@ -209,7 +218,7 @@ Contohnya untuk pesan "hapus catatan ngopi tadi":
 5. **Bertindak:** memakai alat Hapus Transaksi.
 6. **Amati:** penghapusan berhasil. Agen lalu menjawab pengguna.
 
-Putaran dibatasi **maksimal 6 langkah**, dan satu pekerjaan dibatasi 10 menit, agar agen yang bingung tidak berputar tanpa akhir.
+Putaran dibatasi **maksimal 8 langkah**, dan satu pekerjaan dibatasi 10 menit, agar agen yang bingung tidak berputar tanpa akhir.
 
 **Pemikiran yang terlihat.** Mode berpikir (thinking) dinyalakan: model menulis penalarannya sebelum menjawab. Penalaran ini disimpan di jejak dan dialirkan langsung ke layar, sehingga kamu bisa membaca "isi kepala" agen.
 
@@ -226,7 +235,7 @@ Semua langkah di atas disusun dengan **LangGraph** sebagai sebuah graf. Ada empa
 | Edge bersyarat | Panah bercabang. Sebuah pemeriksa kecil (router) melihat keadaan saat itu, lalu memilih cabang | Persimpangan dengan petunjuk arah |
 | State (keadaan) | Satu "map dokumen" bersama yang dibawa dari node ke node: jenis masukan, isi pesan, riwayat, hasil struk, nomor langkah, jawaban | Map berkas yang diestafetkan |
 
-Setiap node membaca state, mengerjakan tugasnya, lalu menuliskan perubahan ke state. Graf lengkapnya berisi 17 node. Gambar berikut adalah versi sederhana: seluruh pipeline struk diringkas menjadi satu kotak.
+Setiap node membaca state, mengerjakan tugasnya, lalu menuliskan perubahan ke state. Graf lengkapnya berisi 18 node (versi 2.0 menambah node **otomasi** untuk pekerjaan dari penjadwal, Bagian 3.10.4). Gambar berikut adalah versi sederhana: seluruh pipeline struk diringkas menjadi satu kotak.
 
 ![Graf agen versi sederhana (pipeline struk diringkas menjadi satu kotak)](img/diagram-srs-graf.png)
 
@@ -234,14 +243,14 @@ Kotak **Konteks** memuat riwayat obrolan agar agen paham bila pengguna berkata "
 
 | No | Dari langkah | Yang diperiksa | Ke mana |
 |---|---|---|---|
-| 1 | Masuk | Jenis masukan | Jalur teks, jalur suara, atau jalur struk |
+| 1 | Masuk | Jenis masukan | Jalur teks, jalur suara, jalur struk, atau jalur otomasi (versi 2.0) |
 | 2 | Sidik jari foto | Pernah dikirim? Mode baca struk? | Selesai (dobel), langsung ke AI lihat foto (bila sistem diatur memakai mode vision), atau ke OCR |
 | 3 | OCR | Mode kerja dan apakah OCR berhasil | Aturan (mode "aturan dulu"), AI baca teks, atau AI lihat foto (bila OCR gagal) |
 | 4 | Aturan | Lolos cek 5 hal? | Data struk siap (lolos) atau AI baca teks (gagal) |
 | 5 | Cek hasil AI baca teks | Lolos cek 5 hal? | Data struk siap (lolos) atau AI lihat foto (gagal) |
 | 6 | Cek struk serupa | Ada catatan lama yang mirip? | Selesai dan tanya dulu (ada) atau Konteks (tidak ada) |
 | 7 | Agen | Model meminta alat? | Alat (ya) atau Penjaga (tidak, model menjawab teks) |
-| 8 | Alat | Perlu bertanya, atau batas 6 langkah tercapai? | Selesai (ya) atau kembali ke Agen (lanjut) |
+| 8 | Alat | Perlu bertanya, atau batas 8 langkah tercapai? | Selesai (ya) atau kembali ke Agen (lanjut) |
 | 9 | Penjaga | Ada klaim palsu? | Kembali ke Agen, ditegur sekali (ya), atau Selesai (tidak) |
 | 10 | Selesai | Sedang menunggu jawaban pengguna? | Tunggu jawaban (ya) atau akhir (tidak) |
 
@@ -252,7 +261,7 @@ Putaran **Agen → Alat → Agen** pada percabangan 7 dan 8 adalah pola ReAct da
 Model berukuran 9 miliar parameter kadang berperilaku keliru. Penjaga menangani dua kasus yang paling sering.
 
 1. **Klaim palsu.** Model menulis "sudah dicatat" padahal tidak ada alat simpan yang berhasil dijalankan. Penjaga mengenali kalimat seperti itu, lalu mengirim teguran ke model ("kamu belum memanggil alat") dan mengembalikan alur ke Agen. Teguran hanya diberikan **sekali** agar tidak berputar terus.
-2. **Jawaban kosong.** Model selesai berpikir tetapi tidak menulis jawaban. Penjaga lalu menyusun jawaban otomatis dari hasil alat yang sudah berhasil.
+2. **Jawaban kosong.** Model selesai berpikir tetapi tidak menulis jawaban. Bila belum ada alat yang dipanggil, penjaga meminta model melanjutkan sekali (versi 2.0; model kadang berniat memanggil alat lalu berhenti). Bila sudah ada alat yang berhasil, penjaga menyusun jawaban otomatis dari hasilnya.
 
 Setiap tindakan penjaga juga dicatat di jejak, jadi terlihat kapan dan mengapa koreksi terjadi.
 
@@ -277,9 +286,96 @@ Setiap pekerjaan berakhir dengan dua label. **Status** menjelaskan keadaan peker
 
 **Siaran langsung** memakai SSE (Bagian 3.2): potongan pemikiran dikirim ke layar kira-kira setiap 0,15 detik. Lewat link publik Cloudflare, SSE tidak didukung, jadi web app otomatis beralih ke **polling** (bertanya berkala "ada langkah baru?"). Langkah tetap muncul, tetapi per langkah, bukan per kata.
 
+### 3.10 Perluasan: Layanan Baru dari Model Lokal
+
+Versi pertama memakai agen untuk satu tugas, yaitu mencatat. Versi 2.0 memakai **model lokal yang sama** untuk layanan yang sebelumnya tidak ada atau sulit dibuat dengan program biasa. Ada tiga pola baru:
+
+1. **Agen menulis program.** Agen tidak terbatas pada alat yang disediakan; untuk pertanyaan analisis, agen menulis kode sendiri lalu menjalankannya.
+2. **Agen memakai alat dari luar laptop.** Agen mengambil data yang tidak ada di database, yaitu kurs mata uang.
+3. **Agen bekerja tanpa disuruh.** Penjadwal di server membangunkan agen pada jam tertentu untuk memeriksa tagihan dan menulis laporan.
+
+```mermaid
+flowchart TB
+  U([Pengguna lewat chat]) --> A
+  J([Penjadwal di server]) --> A
+  A[Agen utama<br/>Qwen 3.5 9B, lokal]
+  A --> S[Sub-agen analis<br/>tulis kode, periksa, sandbox]
+  A --> K[Alat eksternal<br/>kurs mata uang]
+  A --> D[Anggaran, tagihan,<br/>langganan]
+  A --> R[Laporan PDF<br/>dengan penjaga angka]
+  S --> W([Angka, grafik, notifikasi, PDF<br/>tampil di web app])
+  K --> W
+  D --> W
+  R --> W
+```
+
+#### 3.10.1 Sub-Agen Analis: Agen yang Menulis Kode
+
+Alat lama (ringkasan dan cari transaksi) hanya bisa menjawab pertanyaan yang sudah diperkirakan pembuatnya. Pertanyaan seperti "kalau pola belanjaku begini terus, total akhir bulan berapa, dan hari apa aku paling boros?" butuh perhitungan yang berbeda-beda. Daripada membuat satu alat untuk setiap pertanyaan, agen diberi alat **`analisis_data`** yang menjalankan **sub-agen**: agen kedua dengan satu tugas, yaitu menulis kode analisis.
+
+1. Server menyalin semua transaksi menjadi tabel sementara. Kode tidak pernah menyentuh database asli.
+2. Model menulis kode Python memakai pandas (pustaka olah tabel) dan matplotlib (pustaka grafik). Untuk membantu model kecil, sandbox menyediakan **fungsi bantu** yang sudah teruji, misalnya `proyeksi_akhir_bulan()`, `per_hari_minggu()`, dan `grafik_batang()`.
+3. **Pemeriksa keamanan** membaca kode sebelum dijalankan dan menolak impor modul selain modul analisis, membuka file, `eval`, dan akses atribut tersembunyi.
+4. **Pemeriksa logika** menolak kesalahan yang sering dibuat model kecil dan tidak memicu error, misalnya menjumlahkan semua transaksi tanpa memisahkan pemasukan dan pengeluaran.
+5. Kode dijalankan di **sandbox**: proses terpisah dengan batas memori, batas waktu, tanpa jaringan, dan di folder sementara.
+6. Bila kode error, pesan errornya (baris yang salah dan penyebabnya) dikirim balik ke model untuk diperbaiki, maksimal 3 percobaan.
+7. Angka hasil kode dan grafiknya dikembalikan ke agen utama, lalu grafik tampil di web app.
+
+![Jawaban analisis di web app: angka dihitung kode, grafik dibuat sub-agen](img/perluasan-analisis.png){w=14}
+
+Setiap percobaan tampil di jejak sebagai langkah **Sandbox kode**, berisi kode, keluaran, dan error, sehingga terlihat bagaimana model memperbaiki kodenya.
+
+#### 3.10.2 Alat Eksternal: Kurs Mata Uang
+
+Bila pengguna menulis "beli kopi di bandara Changi 6,5 SGD", agen memanggil alat **`konversi_kurs`**. Alat ini mengambil kurs dari internet (Frankfurter, berisi kurs resmi Bank Sentral Eropa; cadangannya open.er-api.com), lalu agen mencatat nominal rupiah beserta mata uang asli dan kursnya. Prinsip privasi tetap dijaga: **yang dikirim keluar hanya kode mata uang dan tanggal**, tanpa nominal dan tanpa isi transaksi. Kurs yang sudah diambil disimpan (cache), sehingga permintaan yang sama tidak keluar ke internet lagi dan tetap bisa dijawab saat offline.
+
+![Langkah alat eksternal di jejak: kurs, sumber, dan data yang dikirim keluar](img/perluasan-kurs.png){w=14}
+
+#### 3.10.3 Anggaran, Tagihan Rutin, dan Deteksi Langganan
+
+- **Anggaran:** pengguna menetapkan batas bulanan per kategori ("atur anggaran makan 1,5 juta"). Setiap kali pengeluaran dicatat, program menghitung persen terpakai dan **proyeksi akhir bulan** (rata-rata harian dikali jumlah hari). Bila melewati ambang (bawaan 80%), agen menyampaikan peringatan dan notifikasi dibuat.
+- **Tagihan rutin:** kos, internet, UKT, atau langganan didaftarkan beserta jatuh temponya. Pengguna cukup bilang "UKT udah aku bayar"; agen mencari tagihan yang cocok, mencatat pembayarannya, lalu memajukan jatuh tempo.
+- **Deteksi langganan:** program mencari pengeluaran yang berulang dengan nominal mirip dan jarak sekitar satu bulan atau satu minggu, tetapi belum didaftarkan (misalnya Spotify dan Netflix), lalu agen menawarkan untuk mendaftarkannya.
+
+Semua angka dihitung program dari database. Agen memutuskan alat mana yang dipakai dan menyampaikan hasilnya.
+
+#### 3.10.4 Penjadwal: Agen yang Bekerja Sendiri
+
+Server punya **penjadwal** yang memeriksa jam setiap menit:
+
+| Tugas | Kapan | Pakai model AI? | Yang dilakukan |
+|---|---|---|---|
+| Cek harian | Setiap hari jam 07.00 | Tidak | Pengingat tagihan H-3 dan hari H, tagihan terlambat, catat otomatis tagihan yang diizinkan, peringatan anggaran |
+| Deteksi langganan | Setiap Senin | Tidak | Kandidat langganan baru menjadi notifikasi |
+| Laporan mingguan | Setiap Senin | Ya | Agen menyusun laporan PDF minggu lalu |
+| Laporan bulanan | Setiap tanggal 1 | Ya | Agen menyusun laporan PDF bulan lalu |
+
+Pekerjaan laporan masuk **antrean yang sama** dengan permintaan pengguna (satu GPU), sebagai jenis masukan **otomasi**. Karena tidak ada pengguna yang menunggu, agen otomasi tidak diberi alat untuk bertanya balik. Penjadwal mencatat jadwal terakhir yang sudah dikerjakan, jadi tugas yang terlewat saat laptop mati dikejar begitu server hidup, dan tidak ada tugas yang dikerjakan dua kali.
+
+![Halaman Otomasi: notifikasi, jadwal, anggaran, tagihan rutin, dan laporan](img/perluasan-otomasi.png){w=14}
+
+#### 3.10.5 Laporan PDF dan Penjaga Angka
+
+Laporan adalah tempat halusinasi paling berbahaya: model bisa menulis angka yang terdengar wajar tetapi salah. Karena itu pembuatannya dibagi dua:
+
+1. Alat **`fakta_laporan`** menghitung semua angka dengan program: total, perbandingan dengan periode sebelumnya, kategori terbesar, merchant teratas, status anggaran, dan tagihan yang akan datang.
+2. Agen membaca fakta itu lalu menulis **narasi** berisi temuan dan saran hemat.
+3. Alat **`buat_laporan`** menjalankan **penjaga angka**: setiap nominal Rp di narasi dicocokkan dengan fakta (pembulatan seperti "Rp4,1 juta" diizinkan). Bila ada angka yang tidak bisa dibuktikan, laporan ditolak dan agen diminta memperbaiki narasinya.
+4. Program menggambar grafik dan menyusun PDF. Bila agen tetap gagal, PDF dibuat dengan narasi templat, dan sumber narasinya ditandai di laporan.
+
+![Halaman pertama laporan PDF: angka utama, narasi model, dan grafik](img/perluasan-laporan.png){w=11}
+
+Contoh nyata dari uji coba: model menulis "potensi penghematan bisa mencapai Rp 300.000-500.000", angka yang tidak ada di data. Penjaga menolak narasi itu, dan pada percobaan berikutnya model menulis ulang tanpa angka karangan tersebut sehingga PDF dibuat. Uji coba awal juga menemukan penjaga yang terlalu ketat ("Rp4.5 juta" dengan titik desimal dibaca salah), lalu diperbaiki. Bila penolakan terjadi, model menerima daftar nominal yang bermasalah dan menulis ulang narasinya; seluruh proses ini terlihat di jejak.
+
+#### 3.10.6 Mengapa Model Lokal Cukup
+
+Kombinasi agen, alat, dan model komersial sudah sangat mampu, tetapi biayanya dihitung per token. Layanan di atas memakai banyak token: satu laporan bulanan memakai sekitar 20 ribu token masukan dan 1 sampai 2 ribu token keluaran, dan satu analisis dengan kode sekitar 9 ribu token. Bila dijalankan setiap hari untuk setiap pengguna, biayanya terus bertambah. Dengan model lokal, biaya tambahannya hanya listrik laptop, dan data keuangan tidak keluar.
+
+Model 9 miliar parameter memang lebih sering keliru daripada model komersial besar. Sistem ini mengimbanginya dengan pola yang sama di semua layanan: **model memutuskan dan menulis, program menghitung dan memeriksa.** Pemeriksa kode, pemeriksa logika, penjaga angka, fungsi bantu, dan cadangan templat membuat model kecil cukup andal untuk pekerjaan sehari-hari.
+
 ## 4 Kebutuhan Fungsional
 
-Kebutuhan fungsional adalah daftar hal yang **harus bisa dilakukan** sistem: masukan (1 sampai 4), pencatatan (5 sampai 10), pertanyaan dan konfirmasi (11 sampai 15), anti-dobel (16 dan 17), serta transparansi (18 sampai 21).
+Kebutuhan fungsional adalah daftar hal yang **harus bisa dilakukan** sistem: masukan (1 sampai 4), pencatatan (5 sampai 10), pertanyaan dan konfirmasi (11 sampai 15), anti-dobel (16 dan 17), transparansi (18 sampai 21), serta layanan versi 2.0 (22 sampai 33).
 
 1. Sistem harus menerima masukan berupa teks bebas berbahasa Indonesia.
 2. Sistem harus menerima foto struk dan rekaman suara dari web app.
@@ -305,13 +401,26 @@ Kebutuhan fungsional adalah daftar hal yang **harus bisa dilakukan** sistem: mas
 18. Sistem harus mencatat setiap langkah kerja agen beserta durasi dan jumlah tokennya.
 19. Sistem harus menyiarkan langkah dan pemikiran agen ke web app selama pekerjaan berjalan.
 20. Sistem harus menampilkan status antrean, pemakaian memori GPU, dan kecepatan model.
-21. Sistem harus membatasi putaran agen maksimal 6 langkah per pekerjaan.
+21. Sistem harus membatasi putaran agen maksimal 8 langkah per pekerjaan (versi 1.0: 6 langkah; dinaikkan karena laporan butuh beberapa putaran alat).
+
+22. Sistem harus bisa menjawab pertanyaan analisis dengan kode yang ditulis model, dijalankan di sandbox tanpa akses jaringan dan tanpa akses ke database asli.
+23. Sistem harus menolak kode yang memakai modul atau perintah berbahaya sebelum kode dijalankan, dan mengirim error kode kembali ke model untuk diperbaiki, maksimal 3 percobaan.
+24. Sistem harus menampilkan grafik hasil analisis di web app dan menyimpan kode setiap percobaan di jejak.
+25. Sistem harus mengonversi nominal mata uang asing ke rupiah memakai kurs online, menyimpan mata uang asli dan kursnya, dan memakai cache bila internet tidak tersedia.
+26. Sistem harus bisa menyimpan anggaran bulanan per kategori dan menghitung persen terpakai, sisa, serta proyeksi akhir bulan.
+27. Sistem harus memberi peringatan saat pengeluaran melewati ambang anggaran.
+28. Sistem harus bisa mendaftarkan tagihan rutin, mencatat pembayarannya, dan memajukan jatuh temponya.
+29. Sistem harus mendeteksi pengeluaran berulang yang belum didaftarkan sebagai tagihan.
+30. Sistem harus menjalankan cek harian (pengingat tagihan dan anggaran) tanpa diminta, dan mengejar jadwal yang terlewat saat server mati.
+31. Sistem harus membuat laporan PDF mingguan dan bulanan secara otomatis, dengan narasi dari model lokal.
+32. Sistem harus menolak narasi laporan yang memuat nominal yang tidak ada di fakta laporan.
+33. Sistem harus menyimpan notifikasi dan mengirimkannya langsung ke web app.
 
 ## 5 Kebutuhan Antarmuka
 
 ### 5.1 Antarmuka Pengguna (Web App)
 
-Web app punya empat halaman: **Sandbox** (masukan, jawaban, konfirmasi, panel struk, jejak), **Transaksi** (saldo, grafik per kategori, tabel dengan tambah, ubah, hapus), **Riwayat** (antrean dan pekerjaan sebelumnya), dan **Sistem** (memori GPU, kecepatan model, daftar alat). Kebutuhannya:
+Web app punya lima halaman: **Sandbox** (masukan, jawaban, konfirmasi, panel struk, grafik analisis, jejak), **Transaksi** (saldo, grafik per kategori, tabel dengan tambah, ubah, hapus), **Otomasi** (notifikasi, jadwal otomasi, anggaran, tagihan rutin, kandidat langganan, laporan PDF; versi 2.0), **Riwayat** (antrean dan pekerjaan sebelumnya), dan **Sistem** (memori GPU, kecepatan model, daftar alat). Ikon lonceng di bagian atas menunjukkan jumlah notifikasi yang belum dibaca. Kebutuhannya:
 
 1. Pengguna tidak perlu mengisi kunci akses; web app menempelkannya otomatis.
 2. Pertanyaan konfirmasi tampil sebagai kotak tersendiri dengan kolom jawaban, dan setiap langkah jejak bisa dibuka rinciannya.
@@ -327,6 +436,8 @@ Web app punya empat halaman: **Sandbox** (masukan, jawaban, konfirmasi, panel st
 | Server | Browser | Saluran siaran langsung (SSE), atau polling lewat link publik |
 | Agen | Model bahasa | Lewat Ollama, di laptop sendiri |
 | Agen | Database | SQLite, berkas di laptop sendiri |
+| Agen | API kurs (Frankfurter, cadangan open.er-api.com) | HTTPS ke internet, hanya kode mata uang dan tanggal (versi 2.0) |
+| Sub-agen analis | Sandbox | Proses Python terpisah di laptop, tanpa jaringan (versi 2.0) |
 | Teman | Web app | Link https dari Cloudflare Tunnel |
 
 Server menyediakan **API** (Application Programming Interface), semacam "menu pesanan" untuk program lain: "kirim pesan", "lihat jejak", "daftar transaksi". **Cloudflare Tunnel** membuat terowongan dari laptop ke internet berupa satu link https acak, tanpa membuka port jaringan. Yang terbuka hanya web app; server AI tetap tertutup di balik proxy. Link mati begitu terowongan dimatikan.
@@ -344,7 +455,7 @@ Kebutuhan non-fungsional menjelaskan **seberapa baik** sistem bekerja, bukan apa
 
 ### 6.1 Privasi dan Data Lokal
 
-1. Semua model AI berjalan di laptop. Tidak ada layanan AI cloud yang dipanggil.
+1. Semua model AI berjalan di laptop. Tidak ada layanan AI cloud yang dipanggil. Alat eksternal kurs hanya menerima kode mata uang dan tanggal; nominal, deskripsi, dan isi transaksi tidak pernah dikirim keluar.
 2. Fitur telemetri (pengiriman data pemakaian ke layanan pemantau di internet) dimatikan secara paksa. Server hanya berbicara dengan Ollama di laptop sendiri.
 3. Foto, suara, transaksi, dan jejak disimpan di disk laptop.
 
@@ -365,6 +476,9 @@ Model berpikir dulu sebelum menjawab, jadi sistem ini tidak secepat chatbot di i
 | Suara | Sekitar 18 sampai 35 detik (pernah sampai sekitar 87 detik saat model berpikir panjang) |
 | Foto struk dobel | Seketika, karena AI tidak dipanggil |
 | Teks dengan mode berpikir dimatikan | Sekitar 9 detik |
+| Mata uang asing (versi 2.0) | Sekitar 15 sampai 22 detik, termasuk sekitar 0,6 detik mengambil kurs dari internet |
+| Analisis dengan kode dan grafik (versi 2.0) | Sekitar 25 sampai 95 detik bila kode berhasil pada percobaan pertama; lebih lama bila model perlu memperbaiki kode |
+| Laporan PDF (versi 2.0) | Sekitar 25 sampai 60 detik, berjalan di latar belakang oleh penjadwal |
 
 Waktu ini bervariasi karena lamanya model berpikir berbeda-beda untuk setiap pesan. Kecepatan model sekitar 15 sampai 26 token per detik. Bila banyak orang mengirim bersamaan, pekerjaan menunggu giliran. Orang kesepuluh bisa menunggu beberapa menit.
 
@@ -376,6 +490,9 @@ Waktu ini bervariasi karena lamanya model berpikir berbeda-beda untuk setiap pes
 4. **Penjaga** memperbaiki klaim palsu dan jawaban kosong.
 5. **Batas langkah dan waktu** mencegah agen berputar tanpa akhir.
 6. **Titik simpan** menjaga percakapan konfirmasi tetap bisa dilanjutkan.
+7. **Penjaga angka dan cadangan templat** (versi 2.0): narasi laporan dengan angka karangan ditolak; bila agen tetap gagal, laporan dibuat dengan narasi templat.
+8. **Cadangan kurs** (versi 2.0): sumber kurs kedua, lalu cache kurs terakhir bila internet mati.
+9. **Penjadwal yang mengejar** (versi 2.0): tugas yang terlewat saat server mati dikerjakan saat server hidup, sekali per jadwal.
 
 ### 6.5 Keterlacakan dan Pemeliharaan
 
@@ -393,13 +510,15 @@ Waktu ini bervariasi karena lamanya model berpikir berbeda-beda untuk setiap pes
 3. **Tanpa akun.** Semua pengguna berbagi satu buku kas dan bisa mengubah catatan orang lain.
 4. **Link publik sementara.** Link berubah setiap kali dibuat, tanpa jaminan selalu aktif, dan tanpa siaran pemikiran per kata.
 5. **Uji struk terbatas.** Pengujian sebagian besar memakai struk contoh buatan, belum banyak struk asli yang kusut atau buram.
+6. **Kode analisis bisa salah logika.** Pemeriksa logika hanya mengenali kesalahan yang umum. Kode yang berjalan tanpa error tetap bisa menjawab pertanyaan yang sedikit berbeda dari maksud pengguna; kode dan keluarannya selalu bisa diperiksa di jejak.
+7. **Notifikasi hanya di web app.** Belum ada notifikasi ke ponsel; pengguna harus membuka web app untuk melihatnya.
 
 ### 7.2 Pengembangan Lanjutan
 
 1. Akun per pengguna dengan buku kas masing-masing.
 2. Pengujian dengan lebih banyak struk asli, lalu penyempurnaan aturan pembaca struk.
 3. Mencoba model lain yang lebih cepat atau lebih tepat memanggil alat.
-4. Ekspor laporan bulanan dan anggaran per kategori dengan peringatan bila melebihi batas.
+4. Notifikasi ke ponsel (misalnya bot Telegram atau ntfy) dan asisten suara dua arah dengan suara jawaban lokal.
 5. Paket kontainer (Docker) agar mudah dipasang di laptop lain; sudah disiapkan tetapi belum diuji.
 
 ## Lampiran A Glosarium
@@ -425,6 +544,10 @@ Lima istilah inti (LLM, tool, agen AI, graf, trace) ada di Bagian 1.3, dan konse
 | **OCR** | Teknologi membaca huruf dan angka dari gambar | **Vision** | Kemampuan model untuk membaca gambar |
 | **Ollama** | Program yang memuat dan melayani model bahasa di komputer sendiri | **VRAM** | Memori milik GPU |
 | **PaddleOCR / RapidOCR** | Model OCR (PaddleOCR) dan cara ringan menjalankannya di CPU (RapidOCR) | **Whisper** | Model AI yang mengubah suara menjadi teks |
+| **Alat eksternal** | Alat agen yang mengambil data dari luar laptop, di sini kurs mata uang | **Penjadwal (scheduler)** | Bagian server yang menjalankan tugas pada jam tertentu tanpa diminta |
+| **Cache** | Salinan hasil yang disimpan agar tidak perlu diambil ulang | **Proyeksi** | Perkiraan nilai akhir dari laju saat ini, misalnya pengeluaran akhir bulan |
+| **pandas / matplotlib** | Pustaka Python untuk mengolah tabel / menggambar grafik | **Sandbox** | Ruang tertutup untuk menjalankan kode buatan model: tanpa jaringan, dengan batas memori dan waktu |
+| **Penjaga angka** | Pemeriksa yang memastikan setiap nominal di narasi laporan ada di fakta | **Sub-agen** | Agen kedua dengan satu tugas khusus yang dipanggil oleh agen utama |
 
 ## Lampiran B Ringkasan Alur dalam Satu Halaman
 
@@ -437,14 +560,16 @@ Lima istilah inti (LLM, tool, agen AI, graf, trace) ada di Bagian 1.3, dan konse
 | 5 | Pilih jalur | Teks langsung lanjut; suara diubah Whisper; struk masuk pipeline berlapis |
 | 6 | Struk | Sidik jari, OCR, aturan, cek 5 hal, AI teks, AI lihat foto, cek struk serupa |
 | 7 | Ingat obrolan | Memuat riwayat percakapan |
-| 8 | Pikir dan bertindak | Putaran ReAct, maksimal 6 langkah; program memeriksa setiap isian alat |
+| 8 | Pikir dan bertindak | Putaran ReAct, maksimal 8 langkah; program memeriksa setiap isian alat. Untuk analisis, sub-agen menulis kode yang dijalankan di sandbox |
 | 9 | Periksa | Menegur klaim palsu sekali; melengkapi jawaban kosong |
 | 10 | Tanya bila ragu | Berhenti, simpan, lalu lanjut saat pengguna menjawab |
 | 11 | Catat jejak | Setiap langkah disimpan dan disiarkan langsung ke layar |
-| 12 | Selesai | Jawaban, transaksi, dan jejak lengkap tampil |
+| 12 | Selesai | Jawaban, transaksi, grafik, dan jejak lengkap tampil |
+| 13 | Otomasi | Penjadwal menjalankan cek harian dan menyuruh agen menulis laporan PDF mingguan dan bulanan |
 
 Tiga prinsip yang perlu diingat:
 
 1. **AI mengusulkan, program memutuskan.** Setiap angka diperiksa sebelum disimpan.
 2. **Murah dulu, mahal belakangan.** AI berat hanya cadangan.
 3. **Kalau ragu, tanya.** Bertanya sekali lebih baik daripada salah catat.
+4. **Model menulis, program memeriksa.** Kode, narasi, dan angka buatan model selalu diperiksa program sebelum dipakai.

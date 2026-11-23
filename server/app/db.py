@@ -96,6 +96,73 @@ CREATE TABLE IF NOT EXISTS steps (
   tokens_per_second REAL
 );
 CREATE INDEX IF NOT EXISTS ix_steps_run ON steps(run_id, seq);
+
+-- Layanan baru (perluasan): anggaran, tagihan rutin, notifikasi, laporan, artefak (grafik), cache kurs, otomasi.
+CREATE TABLE IF NOT EXISTS budgets (
+  category TEXT PRIMARY KEY,            -- nama kategori pengeluaran, atau '_total' untuk semua pengeluaran
+  monthly_limit INTEGER NOT NULL,
+  alert_pct INTEGER NOT NULL DEFAULT 80,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  category TEXT NOT NULL DEFAULT 'tagihan',
+  merchant TEXT,
+  frequency TEXT NOT NULL DEFAULT 'bulanan' CHECK (frequency IN ('mingguan','bulanan','tahunan')),
+  next_due TEXT NOT NULL,               -- YYYY-MM-DD jatuh tempo berikutnya
+  auto_record INTEGER NOT NULL DEFAULT 0,  -- 1 = otomasi mencatat transaksi saat jatuh tempo
+  origin TEXT NOT NULL DEFAULT 'manual',   -- manual | deteksi
+  active INTEGER NOT NULL DEFAULT 1,
+  last_paid TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,                   -- anggaran | tagihan | laporan | langganan | otomasi
+  level TEXT NOT NULL DEFAULT 'info',   -- info | warning | danger
+  title TEXT NOT NULL,
+  body TEXT,
+  data_json TEXT,
+  dedup_key TEXT UNIQUE,
+  read INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reports (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,                   -- mingguan | bulanan | manual
+  period_label TEXT NOT NULL,
+  date_from TEXT, date_to TEXT,
+  pdf_path TEXT NOT NULL,
+  facts_json TEXT,
+  narrative TEXT,
+  narrative_source TEXT,                -- agent | template
+  run_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  kind TEXT NOT NULL,                   -- chart
+  title TEXT,
+  path TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fx_cache (
+  base TEXT NOT NULL, quote TEXT NOT NULL, day TEXT NOT NULL,
+  rate REAL NOT NULL, provider TEXT, rate_date TEXT, fetched_at TEXT NOT NULL,
+  PRIMARY KEY (base, quote, day)
+);
+CREATE TABLE IF NOT EXISTS automations (
+  name TEXT PRIMARY KEY,
+  last_slot TEXT,                       -- slot jadwal terakhir yang sudah dijalankan (mis. 2026-11-23 / 2026-W47 / 2026-11)
+  last_run_at TEXT,
+  last_status TEXT,
+  last_detail_json TEXT
+);
 """
 
 _lock = threading.RLock()
@@ -132,7 +199,9 @@ def init_db() -> None:
         c.executescript(SCHEMA)
         # migrasi ringan (aditif) untuk DB lama: kolom baru boleh NULL
         for table, col, typ in (("runs", "outcome", "TEXT"), ("runs", "dedup_key", "TEXT"), ("runs", "engine", "TEXT"),
-                                ("steps", "node", "TEXT")):
+                                ("steps", "node", "TEXT"), ("transactions", "orig_currency", "TEXT"),
+                                ("transactions", "orig_amount", "REAL"), ("transactions", "fx_rate", "REAL"),
+                                ("transactions", "bill_id", "INTEGER")):
             try:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
             except sqlite3.OperationalError:

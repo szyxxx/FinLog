@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Activity, FlaskConical, History, Receipt, Settings as Cog, Wallet } from "lucide-react";
-import { AppProvider, serverLabel, useApp, type Settings } from "./lib/store";
+import { Activity, Bell, CalendarClock, FlaskConical, History, Receipt, Settings as Cog, Wallet } from "lucide-react";
+import { AppProvider, serverLabel, useApp, useLoad, type Settings } from "./lib/store";
+import { AutomationPage } from "./pages/Automation";
 import { SandboxPage } from "./pages/Sandbox";
 import { TransactionsPage } from "./pages/Transactions";
 import { HistoryPage } from "./pages/History";
@@ -23,6 +24,18 @@ function ServerPill({ onClick }: { onClick: () => void }) {
       <i style={{ width: 8, height: 8, borderRadius: 9, background: color, boxShadow: `0 0 10px ${color}` }} />
       {settings.mock ? <span>Mode mock</span> : <span className="mono">{serverLabel(settings)}</span>}
       <span className="faint">· antrean {q}</span>
+    </button>
+  );
+}
+
+/** Lonceng notifikasi: jumlah notifikasi belum dibaca (otomasi anggaran/tagihan/laporan). */
+function NotifBell() {
+  const { client, version, go } = useApp();
+  const n = useLoad(() => client.notifications(true), [client, version]);
+  const unread = n.data?.unread ?? 0;
+  return (
+    <button className="icon-btn bell" aria-label={`Notifikasi, ${unread} belum dibaca`} onClick={() => go({ page: "otomasi" })}>
+      <Bell size={17} />{unread > 0 && <span className="bell-count">{unread > 9 ? "9+" : unread}</span>}
     </button>
   );
 }
@@ -84,7 +97,8 @@ function Shell() {
   const { route, go, toasts, settings } = useApp();
   const [showSettings, setShowSettings] = useState(false);
   const tabs = [
-    ["sandbox", "Sandbox", FlaskConical], ["transaksi", "Transaksi", Wallet], ["riwayat", "Riwayat", History], ["sistem", "Sistem", Activity],
+    ["sandbox", "Sandbox", FlaskConical], ["transaksi", "Transaksi", Wallet], ["otomasi", "Otomasi", CalendarClock],
+    ["riwayat", "Riwayat", History], ["sistem", "Sistem", Activity],
   ] as const;
   return (
     <>
@@ -97,6 +111,7 @@ function Shell() {
         </nav>
         <span className="spacer" />
         <ServerPill onClick={() => setShowSettings(true)} />
+        <NotifBell />
         <button className="icon-btn" aria-label="Pengaturan" onClick={() => setShowSettings(true)}><Cog size={17} /></button>
       </header>
       <main className="page">
@@ -106,6 +121,7 @@ function Shell() {
         )}
         {route.page === "sandbox" && <SandboxPage />}
         {route.page === "transaksi" && <TransactionsPage />}
+        {route.page === "otomasi" && <AutomationPage />}
         {route.page === "riwayat" && <HistoryPage />}
         {route.page === "sistem" && <SystemPage />}
       </main>

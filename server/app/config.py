@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     llm_num_predict: int = 4096  # batas token output per panggilan (termasuk thinking) agar tidak berputar tanpa akhir
     llm_read_timeout_s: float = 300  # jeda maksimum antar-chunk dari Ollama
     llm_keep_alive: str = "30m"
-    agent_max_steps: int = 6
+    agent_max_steps: int = 8  # laporan otomatis butuh beberapa putaran tool (ringkasan, anggaran, tagihan, buat_laporan)
     agent_run_timeout_s: float = 600  # batas total satu run (praproses + semua langkah LLM/tool)
     # Mesin orkestrasi agent: langgraph (graf LangGraph, app/graph_agent.py) | custom (loop lama, app/agent.py).
     # Kontrak API/trace/SSE sama untuk keduanya. Kembali ke mesin lama: AGENT_ENGINE=custom lalu restart.
@@ -72,6 +72,30 @@ class Settings(BaseSettings):
     imap_folder: str = "INBOX"
     imap_search: str = "UNSEEN"
     imap_max_messages: int = 10
+
+    # ---------------------------------------------------------------- layanan baru (perluasan)
+    # Alat eksternal: kurs mata uang online. Hanya kode mata uang + tanggal yang dikirim (tanpa data keuangan pengguna).
+    fx_enabled: bool = True
+    fx_primary_url: str = "https://api.frankfurter.dev/v1"  # kurs ECB, gratis, tanpa API key
+    fx_fallback_url: str = "https://open.er-api.com/v6/latest"  # cadangan bila sumber utama gagal
+    fx_timeout_s: float = 8
+
+    # Sub-agen analis: model lokal menulis kode Python (pandas/matplotlib) lalu dijalankan di sandbox.
+    analysis_max_attempts: int = 3  # percobaan tulis-jalankan-perbaiki
+    analysis_timeout_s: float = 25  # batas waktu satu eksekusi kode
+    analysis_think: bool = False  # thinking untuk sub-agen analis (lebih teliti tapi jauh lebih lambat)
+    analysis_mem_mb: int = 1024
+
+    # Otomasi terjadwal (penjadwal di dalam server). Jam memakai TIMEZONE.
+    automation_enabled: bool = True
+    automation_tick_s: int = 60
+    automation_daily_hour: int = 7  # cek tagihan jatuh tempo + anggaran setiap hari jam ini
+    report_weekly_enabled: bool = True  # laporan mingguan tiap Senin (periode minggu lalu)
+    report_monthly_enabled: bool = True  # laporan bulanan tiap tanggal 1 (periode bulan lalu)
+    bill_remind_days: int = 3  # pengingat H-3 sebelum jatuh tempo
+
+    reports_dir: str = str(BASE_DIR / "data" / "reports")
+    artifacts_dir: str = str(BASE_DIR / "data" / "artifacts")
 
     @property
     def api_key_list(self) -> list[str]:

@@ -5,7 +5,10 @@ import { InputIcon } from "./ui";
 
 type Mode = "text" | "receipt" | "voice";
 
-const EXAMPLES = ["beli bensin 30rb tadi pagi", "gajian 4,5 juta", "tadi bayar 50", "pengeluaran makan bulan ini berapa?", "hapus transaksi yang barusan"];
+const EXAMPLES = ["beli bensin 30rb tadi pagi", "gajian 4,5 juta", "tadi bayar 50", "pengeluaran makan bulan ini berapa?", "hapus transaksi yang barusan",
+  "beli kopi di Changi 6,5 SGD", "bandingkan pengeluaran makan per bulan, kasih grafik", "proyeksi pengeluaran akhir bulan & hari paling boros?",
+  "atur anggaran transportasi 500rb", "daftarkan tagihan listrik 200rb tiap tanggal 20", "ada langganan yang belum aku daftarkan?",
+  "UKT udah aku bayar barusan", "buatkan laporan bulan lalu"];
 
 export function InputPanel({ conversationId, onSubmitted }: { conversationId?: string; onSubmitted: (runId: string) => void }) {
   const [mode, setMode] = useState<Mode>("text");
@@ -57,7 +60,7 @@ function ChatInput({ conversationId, onSubmitted }: { conversationId?: string; o
       <textarea className="input" placeholder="mis. “ngopi di warkop 15 ribu” atau “pengeluaran bulan ini berapa?”" value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} />
-      <div className="chips">{EXAMPLES.map((x) => <button key={x} className="chip" onClick={() => setText(x)}>{x}</button>)}</div>
+      <div className="chips input-chips">{EXAMPLES.map((x) => <button key={x} className="chip" onClick={() => setText(x)}>{x}</button>)}</div>
       <label className="row small muted" style={{ gap: 8, cursor: conversationId ? "pointer" : "not-allowed" }}>
         <input type="checkbox" checked={cont && !!conversationId} disabled={!conversationId} onChange={(e) => setCont(e.target.checked)} />
         Lanjutkan percakapan run terpilih {conversationId && <span className="mono tiny faint">{conversationId}</span>}

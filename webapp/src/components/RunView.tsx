@@ -8,6 +8,7 @@ import { Badge, InputIcon, OutcomeBadge, RichText, StatusBadge } from "./ui";
 import { StepDetail } from "./StepDetail";
 import { StepIcon, stepGist, stepMeta } from "./stepMeta";
 import { ReceiptViewer } from "./ReceiptViewer";
+import { ChartGallery, ReportLinks, runArtifacts } from "./Artifacts";
 
 export function RunView({ runId, openStep, onSubmitted }: { runId: string; openStep?: number; onSubmitted: (runId: string) => void }) {
   const { client, bump, toast } = useApp();
@@ -29,7 +30,9 @@ export function RunView({ runId, openStep, onSubmitted }: { runId: string; openS
   const ptok = live ? llmSteps.reduce((a, s) => a + (s.prompt_tokens ?? 0), 0) : run.prompt_tokens;
   const ctok = live ? llmSteps.reduce((a, s) => a + (s.completion_tokens ?? 0), 0) : run.completion_tokens;
   const tone = run.outcome ? OUTCOME[run.outcome]?.tone ?? "ok" : "ok";
-  const inputText = run.input_type === "text" ? run.input_text : steps.find((s) => s.type === "input")?.input?.filename ?? run.input_meta?.filename ?? INPUT_LABEL[run.input_type];
+  const inputText = run.input_type === "automation"
+    ? `Otomasi: ${run.input_meta?.task === "laporan" ? `laporan ${run.input_meta?.report_kind ?? ""} (${run.input_meta?.periode ?? ""})` : run.input_meta?.task ?? ""}`
+    : run.input_type === "text" ? run.input_text : steps.find((s) => s.type === "input")?.input?.filename ?? run.input_meta?.filename ?? INPUT_LABEL[run.input_type];
   const transcript = steps.find((s) => s.name === "transkripsi_suara")?.output?.text;
   const email = steps.find((s) => s.name === "baca_email")?.output;
 
@@ -52,7 +55,7 @@ export function RunView({ runId, openStep, onSubmitted }: { runId: string; openS
             {run.input_type === "voice" && <RunAudio src={client.runAudio(run)} />}
             {email && <p className="muted" style={{ margin: "6px 0 0" }}>{email.subject} · {email.from}</p>}
           </div>
-          <div className="small faint" style={{ textAlign: "right" }}>
+          <div className="small faint run-ids" style={{ textAlign: "right" }}>
             <div className="mono">{run.id}</div>
             <div>conv <span className="mono">{run.conversation_id}</span></div>
             <div>{clock(run.created_at)}{run.model ? ` · ${run.model}` : ""}</div>
@@ -69,11 +72,14 @@ export function RunView({ runId, openStep, onSubmitted }: { runId: string; openS
           <div className={`answer ${tone}`}><RichText text={run.final_answer} /></div>
         )}
         {run.error && <div className="answer bad">{run.error}</div>}
+        {(() => { const a = runArtifacts(steps); return (a.charts.length > 0 || a.reports.length > 0) && (
+          <div className="stack" style={{ gap: 10, marginTop: 12 }}><ChartGallery charts={a.charts} /><ReportLinks reports={a.reports} /></div>
+        ); })()}
         {(run.transactions?.length ?? 0) > 0 && (
           <div className="row wrap" style={{ marginTop: 12, gap: 8 }}>
             {run.transactions!.map((t) => (
               <span key={t.id} className="badge tone-muted" style={{ padding: "5px 10px" }}>
-                #{t.id} · <b style={{ color: t.kind === "pemasukan" ? "var(--ok)" : "var(--text-base)" }}>{t.kind === "pemasukan" ? "+" : "−"}{rp(t.amount)}</b> · {catLabel(t.category)}{t.merchant ? ` · ${t.merchant}` : ""}
+                #{t.id} · <b style={{ color: t.kind === "pemasukan" ? "var(--ok)" : "var(--text-base)" }}>{t.kind === "pemasukan" ? "+" : "−"}{rp(t.amount)}</b> · {catLabel(t.category)}{t.merchant ? ` · ${t.merchant}` : ""}{t.orig_currency ? ` · ${t.orig_currency} ${t.orig_amount ?? ""}` : ""}
               </span>
             ))}
           </div>

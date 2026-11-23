@@ -1,7 +1,7 @@
 // Klien mock: meniru server (antrean FIFO, run, SSE dengan llm_delta) tanpa jaringan dan tanpa LLM.
 import type {
-  ApiClient, Category, Health, InputResponse, InputType, Job, JobsResponse, Metrics, RunQuery,
-  RunSummary, Step, StreamEvent, Summary, SystemInfo, Tx, TxList, TxQuery,
+  ApiClient, Automation, Bill, BudgetRow, Category, Health, InputResponse, InputType, Job, JobsResponse, Metrics, Notif,
+  Report, RunQuery, RunSummary, Step, StreamEvent, Summary, SystemInfo, Tx, TxList, TxQuery,
 } from "../api/types";
 import {
   CATEGORIES, MOCK_AUDIO, MOCK_IMAGES, confirmationReplyRun, confirmationRun, fallbackReceiptRun, questionRun,
@@ -281,6 +281,62 @@ export class MockClient implements ApiClient {
 
   receiptImage(run: RunSummary) { return MOCK_IMAGES[run.id] ?? null; }
   runAudio(run: RunSummary) { return MOCK_AUDIO[run.id] ?? null; }
+  fileUrl(_path: string) { return ""; }
+
+  // ------------------------------------------------------------ layanan baru (data contoh statis)
+  private budgetLimits: Record<string, [number, number]> = { _total: [4_000_000, 80], makanan_minuman: [1_600_000, 80], transportasi: [450_000, 80] };
+  private mockBills: Bill[] = [
+    { id: 1, name: "Kos Pak Darto", amount: 1_250_000, category: "tagihan", frequency: "bulanan", next_due: "2026-12-01", auto_record: true, origin: "demo", active: true, hari_lagi: 7 },
+    { id: 2, name: "Internet IndiHome", amount: 350_000, category: "tagihan", frequency: "bulanan", next_due: "2026-12-05", auto_record: false, origin: "demo", active: true, hari_lagi: 11 },
+  ];
+  private mockNotifs: Notif[] = [
+    { id: 2, kind: "anggaran", level: "warning", title: "Anggaran total pengeluaran: waspada", body: "Anggaran total pengeluaran: 87% terpakai (Rp3.480.490 dari Rp4.000.000).", read: false, created_at: "2026-11-24T07:00:00+07:00" },
+    { id: 1, kind: "langganan", level: "info", title: "Terdeteksi pengeluaran rutin: Spotify", body: "Spotify sekitar Rp54.990 (bulanan, 4x). Daftarkan sebagai tagihan agar diingatkan?", read: false, created_at: "2026-11-24T07:00:00+07:00" },
+  ];
+  async budgets() {
+    const anggaran: BudgetRow[] = Object.entries(this.budgetLimits).map(([kategori, [batas, ambang]]) => {
+      const terpakai = kategori === "_total" ? this.txs.filter((t) => t.kind === "pengeluaran").reduce((a, t) => a + t.amount, 0) : this.sumCat(kategori);
+      const persen = Math.round((terpakai / batas) * 1000) / 10;
+      return { kategori, batas, terpakai, sisa: batas - terpakai, persen, ambang_persen: ambang, proyeksi_akhir_bulan: Math.round(terpakai * 1.3),
+        sisa_per_hari: Math.max(0, Math.round((batas - terpakai) / 7)), status: persen >= 100 ? "terlampaui" : persen >= ambang ? "waspada" : "aman" };
+    });
+    return { bulan: "2026-11", hari_ke: 24, jumlah_hari: 30, anggaran, kategori_tanpa_anggaran: [] };
+  }
+  async setBudget(kategori: string, batas: number, ambang = 80) {
+    this.budgetLimits[kategori === "total" ? "_total" : kategori] = [batas, ambang];
+    return (await this.budgets()).anggaran.find((b) => b.kategori === kategori)!;
+  }
+  async deleteBudget(kategori: string) { delete this.budgetLimits[kategori]; return { ok: true }; }
+  async bills() { const t = this.mockBills.filter((b) => b.active); return { tagihan: t, jumlah: t.length, perkiraan_total_per_bulan: t.reduce((a, b) => a + b.amount, 0) }; }
+  async addBill(b: { nama: string; jumlah: number; jatuh_tempo: string; frekuensi?: string; kategori?: string; catat_otomatis?: boolean }) {
+    const bill: Bill = { id: this.mockBills.length + 1, name: b.nama, amount: b.jumlah, category: b.kategori ?? "tagihan", frequency: (b.frekuensi as Bill["frequency"]) ?? "bulanan",
+      next_due: /^\d{1,2}$/.test(b.jatuh_tempo) ? `2026-12-${b.jatuh_tempo.padStart(2, "0")}` : b.jatuh_tempo, auto_record: !!b.catat_otomatis, origin: "manual", active: true, hari_lagi: 10 };
+    this.mockBills.push(bill);
+    return bill;
+  }
+  async payBill(id: number) {
+    const b = this.mockBills.find((x) => x.id === id)!;
+    const tx = await this.createTx({ jenis: "pengeluaran", jumlah: b.amount, kategori: b.category, deskripsi: `Bayar ${b.name}` });
+    return { transaksi: tx, tagihan: b };
+  }
+  async deleteBill(id: number) { const b = this.mockBills.find((x) => x.id === id)!; b.active = false; return b; }
+  async detectSubscriptions() {
+    return { jumlah: 1, kandidat: [{ nama: "Spotify", kunci: "spotify", frekuensi: "bulanan", nominal_tipikal: 54990, kategori: "hiburan", kemunculan: 4,
+      tanggal: ["2026-08-12", "2026-09-12", "2026-10-12", "2026-11-12"], perkiraan_berikutnya: "2026-12-12", keyakinan: 0.78 }] };
+  }
+  async notifications() { return { unread: this.mockNotifs.filter((n) => !n.read).length, notifications: this.mockNotifs }; }
+  async readNotifications(ids?: number[]) { for (const n of this.mockNotifs) if (!ids || ids.includes(n.id)) n.read = true; return { ok: true }; }
+  async reports(): Promise<{ reports: Report[] }> { return { reports: [] }; }
+  async requestReport(_periode: string): Promise<InputResponse> { throw new Error("Laporan PDF hanya tersedia dengan server sungguhan (matikan mode mock)."); }
+  async automations(): Promise<{ enabled: boolean; timezone: string; tasks: Automation[] }> {
+    const t = (name: string, label: string, jadwal: string, llm: boolean): Automation => ({ name, label, jadwal, pakai_llm: llm, aktif: true,
+      slot_terakhir: null, terakhir_jalan: null, status_terakhir: null, detail_terakhir: null, jadwal_berikutnya: "2026-11-30T07:00+07:00" });
+    return { enabled: true, timezone: "Asia/Jakarta", tasks: [t("harian", "Cek tagihan & anggaran harian", "Setiap hari jam 07:00", false),
+      t("deteksi_langganan", "Deteksi langganan baru", "Setiap Senin jam 07:00", false),
+      t("laporan_mingguan", "Laporan mingguan (PDF)", "Setiap Senin jam 07:00, periode minggu lalu", true),
+      t("laporan_bulanan", "Laporan bulanan (PDF)", "Setiap tanggal 1 jam 07:00, periode bulan lalu", true)] };
+  }
+  async runAutomation(name: string) { return { name, status: "ok", manual: true, catatan: "mode mock: tidak ada yang dijalankan" }; }
 
   /** Isi answered_by_run_id / answers_run_id seperti server (run berikutnya di percakapan yang sama). */
   private links(r: RunSummary): RunSummary {

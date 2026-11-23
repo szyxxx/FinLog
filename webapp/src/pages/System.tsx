@@ -91,14 +91,14 @@ export function SystemPage() {
       <div className="two-col">
         <section className="card pad-lg">
           <div className="card-title"><h3>Latensi per jenis input</h3><span className="small faint">{m?.window_runs ?? 0} run terakhir</span></div>
-          <table className="tbl">
+          <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th>Input</th><th className="r">Run</th><th className="r">Error</th><th className="r">Rata²</th><th className="r">p50</th><th className="r">p95</th><th className="r">Tunggu antre</th></tr></thead>
             <tbody>
               {Object.entries(m?.latency_by_input_type ?? {}).map(([k, v]) => (
                 <tr key={k}><td>{INPUT_LABEL[k] ?? k}</td><td className="r">{v.runs}</td><td className="r">{v.errors}</td><td className="r">{dur(v.latency_ms.avg)}</td><td className="r">{dur(v.latency_ms.p50)}</td><td className="r">{dur(v.latency_ms.p95)}</td><td className="r">{dur(v.queue_wait_ms_avg)}</td></tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <div className="row wrap" style={{ gap: 8, marginTop: 14 }}>
             {Object.entries(m?.runs_by_status ?? {}).map(([k, v]) => <Badge key={k} tone={STATUS[k]?.tone ?? "muted"}>{STATUS[k]?.label ?? k}: {v}</Badge>)}
           </div>

@@ -113,6 +113,20 @@ Endpoint `/v1/metrics` membaca `nvidia-smi` dan statistik internal untuk menampi
 
 Untuk ketahanan, ada rencana cadangan. Mesin agen versi pertama, sebuah loop buatan sendiri, masih tersedia dan bisa diaktifkan kembali dengan `AGENT_ENGINE=custom`, tanpa mengubah API, database, maupun web app.
 
+## 15. Perluasan: layanan baru dari model lokal
+
+Versi kedua memakai model yang sama untuk pekerjaan yang lebih berat daripada mencatat.
+
+**Sub-agen analis.** Untuk pertanyaan seperti "proyeksi pengeluaran akhir bulan dan hari paling boros?", agen utama memanggil tool `analisis_data`. Tool ini menjalankan sub-agen yang menulis kode pandas/matplotlib. Sebelum dijalankan, kode dibaca oleh pemeriksa AST (impor di luar modul analisis, `open`, `eval`, atribut dunder ditolak) dan pemeriksa logika (menjumlahkan pemasukan dan pengeluaran bersama ditolak). Kode lalu dijalankan di proses Python terpisah dengan `rlimit` memori dan CPU, tanpa jaringan, di folder sementara berisi salinan CSV transaksi. Bila error, baris yang gagal dan pesan exception dikirim balik ke model, maksimal tiga kali. Fungsi bantu seperti `proyeksi_akhir_bulan()` dan `per_hari_minggu()` membuat model 9B cukup merangkai fungsi yang sudah teruji. Setiap percobaan muncul di trace sebagai step `sandbox`, dan grafik disimpan sebagai artefak yang tampil di web app.
+
+**Alat eksternal.** Tool `konversi_kurs` memanggil API Frankfurter (kurs ECB) dengan httpx; bila gagal, open.er-api.com; bila internet mati, cache terakhir di tabel `fx_cache`. Yang keluar hanya kode mata uang dan tanggal. Penjaga `kurs_belum_dicatat` menegur model sekali bila kurs sudah didapat untuk pesan transaksi tetapi `catat_transaksi` tidak dipanggil.
+
+**Anggaran, tagihan, langganan.** Setiap tool tulis pengeluaran diikuti pemeriksaan anggaran; hasil tool membawa `peringatan_anggaran` dan notifikasi dikirim lewat event SSE `notification`. Tagihan rutin menyimpan jatuh tempo berikutnya; `bayar_tagihan` membuat transaksi dan memajukannya satu periode. Deteksi langganan mengelompokkan pengeluaran per merchant dan mencari nominal yang stabil dengan jarak sekitar sebulan atau seminggu.
+
+**Penjadwal.** Sebuah task asyncio di server berjalan setiap menit dan menghitung slot jadwal (tanggal, minggu ISO, bulan). Cek harian dan deteksi langganan dijalankan langsung tanpa LLM. Laporan dimasukkan ke antrean job yang sama dengan `input_type = automation`; graf masuk lewat node `otomasi`, dan alat `minta_konfirmasi` tidak diberikan karena tidak ada pengguna yang menunggu. Slot terakhir disimpan di tabel `automations`, sehingga jadwal yang terlewat saat laptop mati dikejar sekali.
+
+**Laporan dan penjaga angka.** Agen memanggil `fakta_laporan` (semua angka dari SQL), menulis narasi, lalu `buat_laporan`. Sebelum PDF dibuat, setiap nominal Rp di narasi dicocokkan dengan fakta; nominal karangan membuat tool gagal dan agen menulis ulang. PDF disusun dengan reportlab dan grafik matplotlib. Bila agen tetap gagal, guard `laporan_cadangan` membuat PDF dengan narasi templat.
+
 ## Penutup
 
 Kalau dirangkum, sistem ini membagi peran dengan tegas:
@@ -121,7 +135,8 @@ Kalau dirangkum, sistem ini membagi peran dengan tegas:
 - **LangGraph** mengatur alur kerja dan bisa berhenti lalu melanjutkan.
 - **Whisper dan OCR** mengubah suara dan gambar menjadi teks.
 - **Model bahasa** bernalar dan memilih tindakan.
-- **Kode deterministik** memvalidasi setiap angka sebelum disimpan.
+- **Kode deterministik** memvalidasi setiap angka sebelum disimpan, memeriksa kode buatan model, dan mencocokkan angka di narasi laporan.
+- **Penjadwal** membangunkan agen untuk cek harian dan laporan tanpa diminta.
 - **SQLite** menyimpan transaksi, jejak kerja, dan checkpoint.
 
-Semuanya berjalan di satu laptop, tanpa data yang keluar ke cloud.
+Semuanya berjalan di satu laptop. Satu-satunya panggilan ke internet adalah kurs mata uang, tanpa data transaksi.

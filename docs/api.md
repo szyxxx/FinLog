@@ -1,4 +1,8 @@
-# Kontrak API: AI Finance Agent Server (v0.1)
+# Kontrak API: AI Finance Agent Server (v0.2)
+
+> **v0.2 (24 November 2026), perluasan aditif:** 10 tool baru (alat eksternal kurs, sub-agen analis data, anggaran,
+> tagihan rutin, deteksi langganan, laporan PDF), input `automation` dari penjadwal, step `sandbox`, outcome `report`,
+> event SSE `notification`, dan endpoint di bagian [Layanan baru](#layanan-baru-v02). Kontrak v0.1 tidak berubah.
 
 Untuk web app **sandbox**. Server: FastAPI di laptop pemilik proyek. Dokumentasi interaktif (OpenAPI) ada
 di `http://<IP-SERVER>:8000/docs`, sedangkan skema mentahnya di `/openapi.json`.
@@ -80,6 +84,7 @@ bila lewat, run berakhir `error` dengan pesan `timeout: ...`.
 | `duplicate` | `done` | **Anti-dobel:** email dengan Message-ID sama atau gambar struk dengan hash sama sudah pernah diproses. Ditolak tanpa memanggil LLM, dan `final_answer` menyebut run serta transaksi sebelumnya |
 | `possible_duplicate` | `awaiting_confirmation` | Struk lain (file berbeda) dengan toko + tanggal + total yang sama sudah tercatat. Jawab "ya, catat" atau "tidak" lewat `conversation_id` |
 | `needs_confirmation` | `awaiting_confirmation` | Agent minta konfirmasi (data ambigu) |
+| `report` | `done` | **v0.2.** Laporan PDF berhasil dibuat (tool `buat_laporan` atau cadangan templat) |
 | `error` | `error` | Gagal |
 
 ## Endpoint
@@ -207,9 +212,14 @@ jumlah token thinking dan jawaban). Setiap panggilan LLM yang berpikir menghasil
 | `guard` | `klaim_tanpa_tool` | `{"jawaban_model"}` | `{"tindakan","pesan"}`: model mengaku sudah mencatat tanpa memanggil tool, lalu diminta mengulang |
 | `confirmation` | `minta_konfirmasi` / `pertanyaan_teks` / `konfirmasi_duplikat` | – | `{"pertanyaan","opsi?","draf_transaksi?"}` |
 | `final` | status run | – | `{"answer","outcome","warnings":[]}` |
+| `sandbox` | `jalankan_kode` | `{"percobaan","kode"}` | **v0.2.** Satu percobaan sub-agen analis: `{"ok","exit_code","timeout","stdout","stderr","hasil","grafik":[{file,judul}],"durasi_ms"}`, atau `{"ok":false,"ditolak_validator":[alasan]}` bila kode ditolak pemeriksa keamanan/logika sebelum dijalankan. `status: "warning"` bila gagal (error dikirim balik ke model untuk diperbaiki) |
+| `guard` | `jawaban_kosong_tanpa_tool` | `{"content"}` | **v0.2.** Model menutup giliran tanpa teks dan tanpa tool; diminta melanjutkan sekali |
+| `guard` | `laporan_cadangan` | `{"periode","alasan"}` | **v0.2.** Run otomasi laporan tidak menghasilkan narasi yang lolos pemeriksaan angka → PDF dibuat dengan narasi templat: `{"laporan","tindakan"}` |
 | `error` | nama exception | – | `{"error"}` |
 
-Tools agent: `catat_transaksi`, `ubah_transaksi`, `hapus_transaksi`, `cari_transaksi`, `ringkasan`, `minta_konfirmasi`.
+Tools agent: `catat_transaksi`, `ubah_transaksi`, `hapus_transaksi`, `cari_transaksi`, `ringkasan`, `minta_konfirmasi`,
+dan sejak v0.2: `konversi_kurs`, `analisis_data`, `atur_anggaran`, `cek_anggaran`, `tambah_tagihan`, `daftar_tagihan`,
+`bayar_tagihan`, `deteksi_langganan`, `fakta_laporan`, `buat_laporan` (lihat [Layanan baru](#layanan-baru-v02)).
 Skema JSON lengkapnya bisa diambil dari `GET /v1/system` → `tools`. Ekstraksi struk, transkripsi suara, dan pembacaan email
 dijalankan sebagai langkah `preprocess` sebelum loop agent (bukan dipanggil oleh LLM).
 
@@ -386,3 +396,71 @@ Diagram selalu dikembalikan (juga saat `engine` = `custom`), agar sandbox bisa m
 
 Step `error` (run gagal) ditulis di luar graf, jadi `node` bernilai `null`. Graf tidak punya node email (fitur email
 dinonaktifkan); bila `EMAIL_ENABLED=true` dipakai lagi, run email dijalankan mesin custom (`engine: "custom"`).
+
+
+## Layanan baru (v0.2)
+
+Perluasan yang memaksimalkan model lokal untuk layanan yang sebelumnya tidak ada: agen bisa **menulis dan menjalankan
+kode analisis**, **memakai alat eksternal**, dan **bekerja sendiri secara terjadwal**. Semua angka tetap dihitung oleh
+program (SQL/pandas), model hanya memutuskan dan menulis.
+
+### Tool baru (dipanggil oleh LLM)
+
+| Tool | Jenis | Isi |
+|---|---|---|
+| `konversi_kurs(jumlah, dari, ke?, tanggal?)` | **Alat eksternal** (internet) | Kurs Frankfurter (ECB), cadangan open.er-api.com, cache `fx_cache`. Yang dikirim keluar hanya kode mata uang + tanggal. Hasil: `{"base","quote","rate","rate_date","provider","cache","hasil","jumlah_asli"}`. `catat_transaksi` menerima `mata_uang_asli`, `jumlah_asli`, `kurs` (kolom `Tx.orig_currency/orig_amount/fx_rate`) |
+| `analisis_data(pertanyaan, grafik?)` | **Sub-agen** | Model lokal menulis kode Python (pandas/matplotlib) → pemeriksa AST + logika → dijalankan di sandbox → error dikirim balik untuk diperbaiki (maks `ANALYSIS_MAX_ATTEMPTS`). Hasil: `{"jawaban_analis","hasil","grafik":[{id,judul,url}],"kode","percobaan","riwayat_percobaan"}`. Setiap percobaan = step `llm` `analis_tulis_kode_N` + step `sandbox` |
+| `atur_anggaran(kategori, batas_bulanan, ambang_persen?)` / `cek_anggaran(kategori?)` | Layanan | Batas bulanan per kategori pengeluaran atau `total`; status `aman`/`waspada`/`terlampaui`/`diproyeksikan_lewat`, proyeksi akhir bulan, sisa per hari |
+| `tambah_tagihan` / `daftar_tagihan` / `bayar_tagihan` | Layanan | Tagihan rutin (mingguan/bulanan/tahunan). `bayar_tagihan` membuat transaksi (`Tx.bill_id`) dan memajukan jatuh tempo satu periode |
+| `deteksi_langganan()` | Layanan | Pengeluaran berulang (nominal ±15%, jarak ±mingguan/bulanan, ≥2 kali) yang belum terdaftar sebagai tagihan |
+| `fakta_laporan(periode)` → `buat_laporan(periode, narasi)` | Layanan | Fakta laporan dihitung program; narasi ditulis model. **Penjaga angka:** setiap nominal Rp di narasi harus ada di fakta (toleransi pembulatan), bila tidak → tool gagal dan model memperbaiki narasinya |
+
+Setelah `catat_transaksi`/`ubah_transaksi`/`bayar_tagihan` pengeluaran, server memeriksa anggaran; bila melewati ambang,
+hasil tool memuat `peringatan_anggaran` dan notifikasi dibuat.
+
+### Endpoint
+
+| Method | Path | Keterangan |
+|---|---|---|
+| GET | `/v1/budgets` | `{"bulan","hari_ke","jumlah_hari","anggaran":[BudgetRow],"kategori_tanpa_anggaran"}` |
+| PUT | `/v1/budgets/{kategori}` | `{"batas_bulanan","ambang_persen"}` → `BudgetRow`. `kategori` = kategori pengeluaran atau `total`/`_total`; lainnya `400` |
+| DELETE | `/v1/budgets/{kategori}` | Hapus anggaran |
+| GET | `/v1/bills?status=aktif\|segera\|terlambat` | `{"tagihan":[Bill],"jumlah","perkiraan_total_per_bulan"}` |
+| POST | `/v1/bills` | `{"nama","jumlah","jatuh_tempo":"5"\|"YYYY-MM-DD","frekuensi","kategori","catat_otomatis"}` → `201 Bill`. Nama aktif yang sama → `400` |
+| PATCH | `/v1/bills/{id}` | Field yang diubah saja |
+| POST | `/v1/bills/{id}/pay` | `{"tanggal?","jumlah?"}` → `{"transaksi":Tx,"tagihan":Bill,"peringatan_anggaran":[]}` |
+| DELETE | `/v1/bills/{id}` | Menonaktifkan (`active=false`), riwayat tetap |
+| GET | `/v1/subscriptions/detect` | `{"kandidat":[{nama,frekuensi,nominal_tipikal,kategori,kemunculan,tanggal[],perkiraan_berikutnya,keyakinan}]}` |
+| GET | `/v1/notifications?unread=&limit=50` | `{"unread","notifications":[Notif]}` |
+| POST | `/v1/notifications/read` | `{"ids":[..]}` atau `{"ids":null}` (semua) |
+| GET | `/v1/reports` | `{"reports":[{id,kind,period_label,date_from,date_to,narrative,narrative_source:"agent"\|"template",run_id,created_at,url,total}]}` |
+| POST | `/v1/reports` | `{"periode":"minggu_lalu"\|"minggu_ini"\|"bulan_lalu"\|"bulan_ini"}` → job `automation` (respons seperti endpoint input, menerima `wait`) |
+| GET | `/v1/reports/{id}/pdf` | File PDF (inline). Untuk link: `?key=KEY` |
+| GET | `/v1/artifacts/{id}` | PNG grafik dari `analisis_data`. Untuk `<img>`: `?key=KEY` |
+| GET | `/v1/automations` | `{"enabled","timezone","tasks":[{name,label,jadwal,pakai_llm,aktif,slot_terakhir,terakhir_jalan,status_terakhir,detail_terakhir,jadwal_berikutnya}]}` |
+| POST | `/v1/automations/{name}/run?periode=` | Jalankan sekarang (`harian`, `deteksi_langganan`, `laporan_mingguan`, `laporan_bulanan`); tidak menggeser jadwal |
+| GET | `/v1/fx?dari=USD&ke=IDR&jumlah=1&tanggal=` | Uji alat kurs (sama dengan tool `konversi_kurs`); `502` bila semua sumber gagal dan tidak ada cache |
+
+### Penjadwal otomasi
+
+| Tugas | Jadwal (zona `TIMEZONE`) | LLM | Isi |
+|---|---|---|---|
+| `harian` | tiap hari jam `AUTOMATION_DAILY_HOUR` | tidak | Pengingat tagihan H-`BILL_REMIND_DAYS`/H-0/terlambat, catat otomatis tagihan `catat_otomatis`, peringatan anggaran (termasuk proyeksi lewat batas) |
+| `deteksi_langganan` | tiap Senin | tidak | Kandidat langganan → notifikasi (sekali per kandidat) |
+| `laporan_mingguan` | tiap Senin | **ya** | Job `automation` di antrean yang sama: `fakta_laporan` → narasi → `buat_laporan` |
+| `laporan_bulanan` | tiap tanggal 1 | **ya** | Sama, periode bulan lalu |
+
+Slot terakhir disimpan di tabel `automations`; tugas yang terlewat saat server mati dikejar ketika server hidup lagi,
+dan satu slot tidak pernah dijalankan dua kali. Run otomasi tidak diberi tool `minta_konfirmasi` (tidak ada pengguna
+yang menunggu). `input_type` = `automation`, `input_meta` = `{"task","report_kind","periode","instruksi"}`.
+
+### SSE
+
+Event global baru **`notification`** (di `/v1/events`): data = `Notif`
+`{"id","kind":"anggaran"|"tagihan"|"laporan"|"langganan","level":"info"|"warning"|"danger","title","body","data","read","created_at"}`.
+
+### Konfigurasi (`server/.env`)
+
+`FX_ENABLED`, `ANALYSIS_MAX_ATTEMPTS` (3), `ANALYSIS_TIMEOUT_S` (25), `ANALYSIS_THINK` (false), `AUTOMATION_ENABLED`,
+`AUTOMATION_DAILY_HOUR` (7), `REPORT_WEEKLY_ENABLED`, `REPORT_MONTHLY_ENABLED`, `BILL_REMIND_DAYS` (3). `AGENT_MAX_STEPS`
+naik ke 8 (laporan butuh beberapa putaran tool).

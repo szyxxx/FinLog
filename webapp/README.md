@@ -70,7 +70,8 @@ Catatan jaringan:
 
 | Halaman | Isi |
 |---|---|
-| **Sandbox** | Input chat / foto struk (pratinjau) / rekam suara (MediaRecorder) atau unggah audio. Run terpilih: KPI (durasi, panggilan LLM, tool call, token), jawaban akhir, transaksi yang dibuat, kotak konfirmasi (opsi sebagai tombol, jawaban dikirim dengan `conversation_id` yang sama), panel struk (gambar + bbox OCR per baris/kotak berwarna menurut confidence, hasil ekstraksi, cek validasi), dan timeline trace (Gantt mini per step; klik untuk membuka prompt lengkap, output, reasoning, waktu & token, argumen + hasil tool, JSON mentah). Selama run berjalan, reasoning/jawaban mengalir live dari event `llm_delta` (lewat link publik Quick Tunnel: polling, lihat di bawah) |
+| **Sandbox** | Input chat / foto struk (pratinjau) / rekam suara (MediaRecorder) atau unggah audio. Run terpilih: KPI (durasi, panggilan LLM, tool call, token), jawaban akhir, transaksi yang dibuat, kotak konfirmasi (opsi sebagai tombol, jawaban dikirim dengan `conversation_id` yang sama), panel struk (gambar + bbox OCR per baris/kotak berwarna menurut confidence, hasil ekstraksi, cek validasi), dan timeline trace (Gantt mini per step; klik untuk membuka prompt lengkap, output, reasoning, waktu & token, argumen + hasil tool, JSON mentah). Sejak v2: grafik dari sub-agen analis tampil di bawah jawaban, step `sandbox` menampilkan kode buatan model + stdout/error tiap percobaan, step `konversi_kurs` menampilkan kurs dan sumbernya, dan link PDF laporan. Selama run berjalan, reasoning/jawaban mengalir live dari event `llm_delta` (lewat link publik Quick Tunnel: polling, lihat di bawah) |
+| **Otomasi** (v2) | Notifikasi (live lewat SSE `notification`), jadwal otomasi + tombol "Jalankan", anggaran per kategori (batang terpakai + proyeksi + garis ambang), tagihan rutin (bayar / nonaktifkan / tambah), kandidat langganan hasil deteksi, laporan PDF (buat sekarang, buka PDF, buka trace). Lonceng di header menampilkan jumlah notifikasi belum dibaca |
 | **Transaksi** | Saldo, pemasukan, pengeluaran per periode; batang per kategori; pengeluaran harian; tabel dengan filter, tambah manual, ubah (PATCH hanya field yang berubah), hapus (soft delete); klik sumber untuk membuka trace run asal |
 | **Riwayat** | Antrean job (job yang sedang diproses, posisi antrean, waktu tunggu) dan daftar run dengan filter jenis input / status / outcome |
 | **Sistem** | Health, VRAM, tok/detik, utilisasi GPU, panjang antrean (dengan grafik kecil yang terisi tiap polling), latensi per jenis input, model & kapabilitas, Whisper, model yang dimuat Ollama, proses GPU, daftar tools agent |
@@ -142,3 +143,9 @@ src/lib/useRunTrace.ts gabungan GET /v1/runs/{id} + SSE per run
 src/components/        RunView (trace), StepDetail, ReceiptViewer (bbox), InputPanel
 src/pages/             Sandbox, Transaksi, Riwayat, Sistem
 ```
+
+## Tampilan ponsel
+
+Layout responsif diuji di lebar 390, 768, 1024, dan 1440 px tanpa scroll horizontal halaman: header dua baris (navigasi
+ikon penuh lebar), Sandbox berurutan input → hasil run → daftar run, timeline trace ringkas (ikon, nama, durasi),
+tabel transaksi dan tabel Otomasi berubah menjadi kartu, tabel data lain bisa digeser di dalam kartunya.

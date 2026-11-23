@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from . import db
+from .config import get_settings
 from .db import CATEGORY_NAMES
 
 KINDS = ["pemasukan", "pengeluaran"]
@@ -31,6 +32,10 @@ TOOL_SPECS = [
             "deskripsi": {"type": "string", "description": "Keterangan singkat"},
             "merchant": {"type": "string", "description": "Nama toko/pengirim/penerima bila ada"},
             "tanggal": {"type": "string", "description": "YYYY-MM-DD. Kosongkan bila hari ini"},
+            "mata_uang_asli": {"type": "string", "description": "Isi HANYA bila transaksi dalam mata uang asing (mis. USD); "
+                                                                  "jumlah tetap dalam rupiah hasil konversi_kurs"},
+            "jumlah_asli": {"type": "number", "description": "Nominal dalam mata uang asing (bila ada)"},
+            "kurs": {"type": "number", "description": "Kurs dari konversi_kurs (bila ada)"},
         },
         ["jenis", "jumlah", "kategori", "deskripsi"],
     ),
@@ -90,7 +95,112 @@ TOOL_SPECS = [
     ),
 ]
 
+EXPENSE_CATS = [n for n, k, _ in db.CATEGORIES if k == "pengeluaran"]
+PERIODE_LAPORAN = ["minggu_lalu", "minggu_ini", "bulan_lalu", "bulan_ini"]
+
+# ---- Alat & layanan baru (perluasan) ----
+TOOL_SPECS += [
+    _fn(
+        "konversi_kurs",
+        "ALAT EKSTERNAL (internet): kurs mata uang asing ke rupiah. Panggil SEBELUM catat_transaksi bila nominal dalam "
+        "mata uang asing (dolar, yen, SGD, ringgit, euro, ...). Juga untuk pertanyaan kurs.",
+        {
+            "jumlah": {"type": "number", "description": "Nominal dalam mata uang asal"},
+            "dari": {"type": "string", "description": "Kode mata uang asal, mis. USD, JPY, SGD, MYR, EUR"},
+            "ke": {"type": "string", "description": "Kode mata uang tujuan, default IDR"},
+            "tanggal": {"type": "string", "description": "YYYY-MM-DD tanggal transaksi (kurs historis). Kosong = hari ini"},
+        },
+        ["jumlah", "dari"],
+    ),
+    _fn(
+        "analisis_data",
+        "Sub-agen analis: menulis & menjalankan kode Python atas SEMUA transaksi untuk pertanyaan yang tidak bisa dijawab "
+        "ringkasan/cari_transaksi: tren antarbulan, perbandingan periode, rata-rata, persentase, prediksi, hari paling boros, "
+        "dan GRAFIK. Tulis pertanyaannya selengkap mungkin.",
+        {
+            "pertanyaan": {"type": "string", "description": "Pertanyaan analisis lengkap, termasuk periode yang dimaksud"},
+            "grafik": {"type": "boolean", "description": "true bila pengguna meminta grafik/visualisasi"},
+        },
+        ["pertanyaan"],
+    ),
+    _fn(
+        "atur_anggaran",
+        "Menetapkan/mengubah batas anggaran BULANAN untuk satu kategori pengeluaran, atau 'total' untuk semua pengeluaran.",
+        {
+            "kategori": {"type": "string", "enum": EXPENSE_CATS + ["total"]},
+            "batas_bulanan": {"type": "integer", "description": "Batas per bulan dalam rupiah"},
+            "ambang_persen": {"type": "integer", "description": "Beri peringatan saat terpakai sekian persen (default 80)"},
+        },
+        ["kategori", "batas_bulanan"],
+    ),
+    _fn(
+        "cek_anggaran",
+        "Status anggaran bulan ini: terpakai, sisa, persen, proyeksi akhir bulan, sisa per hari. Kosongkan kategori untuk semua.",
+        {"kategori": {"type": "string", "enum": EXPENSE_CATS + ["total"]}},
+    ),
+    _fn(
+        "tambah_tagihan",
+        "Mendaftarkan tagihan/langganan RUTIN (listrik, internet, kos, Netflix, cicilan) agar diingatkan otomatis sebelum "
+        "jatuh tempo. Ini BUKAN mencatat pembayaran.",
+        {
+            "nama": {"type": "string"},
+            "jumlah": {"type": "integer", "description": "Nominal rupiah per periode"},
+            "jatuh_tempo": {"type": "string", "description": "Tanggal tiap bulan (mis. '5') atau tanggal YYYY-MM-DD berikutnya"},
+            "frekuensi": {"type": "string", "enum": ["bulanan", "mingguan", "tahunan"]},
+            "kategori": {"type": "string", "enum": EXPENSE_CATS},
+            "catat_otomatis": {"type": "boolean", "description": "true HANYA bila pengguna memintanya: saat jatuh tempo otomasi "
+                                                                 "langsung mencatat pengeluarannya. Default false (hanya pengingat)"},
+        },
+        ["nama", "jumlah", "jatuh_tempo"],
+    ),
+    _fn(
+        "daftar_tagihan",
+        "Daftar tagihan rutin beserta jatuh tempo berikutnya dan sisa hari.",
+        {"status": {"type": "string", "enum": ["aktif", "segera", "terlambat"],
+                    "description": "aktif = semua; segera = jatuh tempo <= 7 hari; terlambat = lewat jatuh tempo"}},
+    ),
+    _fn(
+        "bayar_tagihan",
+        "Mencatat pembayaran tagihan rutin (membuat transaksi pengeluaran dan memajukan jatuh tempo). Cari id dengan daftar_tagihan.",
+        {
+            "id": {"type": "integer"},
+            "tanggal": {"type": "string", "description": "YYYY-MM-DD, default hari ini"},
+            "jumlah": {"type": "integer", "description": "Bila nominal berbeda dari biasanya"},
+        },
+        ["id"],
+    ),
+    _fn(
+        "deteksi_langganan",
+        "Menganalisis riwayat transaksi untuk menemukan pengeluaran berulang (langganan/tagihan) yang belum didaftarkan.",
+        {},
+    ),
+    _fn(
+        "fakta_laporan",
+        "Mengambil semua angka untuk laporan keuangan suatu periode (total, perbandingan periode sebelumnya, kategori, "
+        "merchant teratas, anggaran, tagihan). Panggil sebelum buat_laporan.",
+        {"periode": {"type": "string", "enum": PERIODE_LAPORAN}},
+        ["periode"],
+    ),
+    _fn(
+        "buat_laporan",
+        "Membuat laporan PDF (grafik + narasimu). Narasi 2-4 paragraf pendek bahasa Indonesia berisi temuan penting dan "
+        "1-2 saran; SEMUA nominal Rp harus persis dari fakta_laporan. Sebut kategori dengan label-nya, bukan nama teknis.",
+        {
+            "periode": {"type": "string", "enum": PERIODE_LAPORAN},
+            "narasi": {"type": "string"},
+        },
+        ["periode", "narasi"],
+    ),
+]
+
 TOOL_NAMES = [t["function"]["name"] for t in TOOL_SPECS]
+
+
+def tools_for(input_type: str) -> list[dict]:
+    """Run otomasi tidak punya pengguna yang bisa ditanya: minta_konfirmasi tidak diberikan."""
+    if input_type == "automation":
+        return [t for t in TOOL_SPECS if t["function"]["name"] != "minta_konfirmasi"]
+    return TOOL_SPECS
 
 
 class ToolError(Exception):
@@ -221,6 +331,22 @@ def normalize_kind(kind: Any, category: Any = None) -> str:
 
 
 def create_transaction(args: dict, source: str = "manual", run_id: str | None = None, items: Any = None) -> dict:
+    tx = _create_transaction(args, source, run_id, items)
+    fx = {}
+    if args.get("mata_uang_asli") and str(args["mata_uang_asli"]).upper() not in ("IDR", "RP", "RUPIAH"):
+        try:
+            fx = {"orig_currency": str(args["mata_uang_asli"]).upper()[:3],
+                  "orig_amount": float(args["jumlah_asli"]) if args.get("jumlah_asli") not in (None, "") else None,
+                  "fx_rate": float(args["kurs"]) if args.get("kurs") not in (None, "") else None}
+        except (TypeError, ValueError):
+            fx = {"orig_currency": str(args["mata_uang_asli"]).upper()[:3]}
+        db.execute("UPDATE transactions SET orig_currency=?, orig_amount=?, fx_rate=? WHERE id=?",
+                   (fx.get("orig_currency"), fx.get("orig_amount"), fx.get("fx_rate"), tx["id"]))
+        tx = get_transaction(tx["id"])
+    return tx
+
+
+def _create_transaction(args: dict, source: str = "manual", run_id: str | None = None, items: Any = None) -> dict:
     jenis_raw = str(args.get("jenis") or "").strip().lower()
     kind = normalize_kind(jenis_raw, args.get("kategori"))
     if not args.get("kategori") and jenis_raw in _CAT_KIND:
@@ -330,13 +456,22 @@ def summary(args: dict) -> dict:
 
 def execute_tool(name: str, args: dict, ctx: dict) -> dict:
     """Jalankan tool. ctx: run_id, source, items (opsional dari struk)."""
+    from .services import planning
+
     if name == "catat_transaksi":
         if not args.get("tanggal") and ctx.get("default_date"):
             args = {**args, "tanggal": ctx["default_date"]}
         tx = create_transaction(args, source=ctx.get("source", "manual"), run_id=ctx.get("run_id"), items=ctx.get("items"))
-        return {"ok": True, "transaksi": tx}
+        out = {"ok": True, "transaksi": tx}
+        warns = planning.check_budget_after_write(tx)
+        if warns:
+            out["peringatan_anggaran"] = warns
+            out["instruksi"] = "Sampaikan peringatan anggaran ini ke pengguna dalam jawabanmu."
+        return out
     if name == "ubah_transaksi":
-        return {"ok": True, **update_transaction(args)}
+        res = update_transaction(args)
+        warns = planning.check_budget_after_write(res["sesudah"])
+        return {"ok": True, **res, **({"peringatan_anggaran": warns} if warns else {})}
     if name == "hapus_transaksi":
         return {"ok": True, **delete_transaction(args.get("id"))}
     if name == "cari_transaksi":
@@ -345,4 +480,102 @@ def execute_tool(name: str, args: dict, ctx: dict) -> dict:
         return {"ok": True, **summary(args)}
     if name == "minta_konfirmasi":
         return {"ok": True, "menunggu_jawaban_pengguna": True}
+    try:
+        return _execute_planning(name, args, ctx, planning)
+    except planning.PlanError as e:
+        raise ToolError(str(e)) from e
+
+
+def _execute_planning(name: str, args: dict, ctx: dict, planning) -> dict:
+    if name == "atur_anggaran":
+        b = planning.set_budget(args.get("kategori"), parse_amount(args.get("batas_bulanan")), args.get("ambang_persen"))
+        return {"ok": True, "anggaran": b}
+    if name == "cek_anggaran":
+        cat = args.get("kategori")
+        cat = planning.TOTAL if cat in ("total", "semua") else cat
+        st = planning.budget_status(cat or None)
+        if not st["anggaran"]:
+            st["catatan"] = "Belum ada anggaran yang diatur" + (f" untuk {cat}" if cat else "") + ". Tawarkan atur_anggaran."
+        return {"ok": True, **st}
+    if name == "tambah_tagihan":
+        b = planning.add_bill(args.get("nama"), parse_amount(args.get("jumlah")), args.get("jatuh_tempo"),
+                              args.get("kategori") or "tagihan", args.get("frekuensi") or "bulanan",
+                              bool(args.get("catat_otomatis")))
+        days = get_settings().bill_remind_days
+        return {"ok": True, "tagihan": b, "catatan": f"Pengingat otomatis dikirim H-{days} dan saat jatuh tempo."}
+    if name == "daftar_tagihan":
+        return {"ok": True, **planning.list_bills(args.get("status") or "aktif")}
+    if name == "bayar_tagihan":
+        if args.get("id") in (None, ""):
+            raise ToolError("id tagihan wajib; cari dulu dengan daftar_tagihan")
+        res = planning.pay_bill(int(args["id"]), parse_date(args.get("tanggal")) if args.get("tanggal") else None,
+                                parse_amount(args["jumlah"]) if args.get("jumlah") else None,
+                                source=ctx.get("source", "text"), run_id=ctx.get("run_id"))
+        warns = planning.check_budget_after_write(res["transaksi"])
+        return {"ok": True, **res, **({"peringatan_anggaran": warns} if warns else {})}
+    if name == "deteksi_langganan":
+        return {"ok": True, **planning.detect_recurring()}
+    if name == "fakta_laporan":
+        from .services import reports
+        try:
+            f = reports.compute_facts(args.get("periode"))
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+        f.pop("pengeluaran_harian", None)  # besar dan tidak perlu untuk narasi (tetap dipakai grafik PDF)
+        return {"ok": True, **f}
+    raise ToolError(f"tool tidak dikenal: {name}")
+
+
+ASYNC_TOOLS = {"konversi_kurs", "analisis_data", "buat_laporan"}
+
+
+async def execute_tool_async(name: str, args: dict, ctx: dict, tracer=None) -> dict:
+    """Eksekusi tool untuk kedua mesin. Tool lama tetap sinkron; tool baru yang butuh internet, sub-agen, atau
+    pembuatan PDF berjalan async (tracer dipakai sub-agen analis untuk mencatat langkahnya)."""
+    import asyncio
+
+    if name not in ASYNC_TOOLS:
+        return execute_tool(name, args, ctx)
+    if name == "konversi_kurs":
+        from .services import fx
+        try:
+            amt = float(args.get("jumlah"))
+        except (TypeError, ValueError):
+            amt = float(parse_amount(args.get("jumlah")))
+        on = parse_date(args["tanggal"]) if args.get("tanggal") else None
+        try:
+            r = await fx.convert(amt, args.get("dari"), args.get("ke") or "IDR", on)
+        except fx.FxError as e:
+            raise ToolError(f"kurs gagal: {e}") from e
+        return {"ok": True, **r, "instruksi": "Bila pengguna MELAPORKAN transaksi (bukan sekadar bertanya kurs), LANGSUNG panggil "
+                "catat_transaksi sekarang tanpa bertanya balik: jumlah = hasil (rupiah), isi mata_uang_asli, jumlah_asli, "
+                "kurs. Tanggal yang tidak disebut = hari ini."}
+    if name == "analisis_data":
+        from .services import analyst
+        if not (args.get("pertanyaan") or "").strip():
+            raise ToolError("pertanyaan analisis wajib diisi")
+        try:
+            r = await analyst.analyze(args["pertanyaan"], tracer, ctx.get("run_id"), bool(args.get("grafik")))
+        except analyst.AnalysisError as e:
+            raise ToolError(str(e)) from e
+        ctx["artifacts"] = [*ctx.get("artifacts", []), *[g["id"] for g in r.get("grafik", [])]]
+        return r
+    if name == "buat_laporan":
+        from .services import reports
+        narr = (args.get("narasi") or "").strip()
+        if len(narr) < 80:
+            raise ToolError("narasi terlalu pendek; tulis 2-4 paragraf dari fakta_laporan")
+        try:
+            facts = reports.compute_facts(args.get("periode"))
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+        bad = reports.check_narrative(narr, facts)
+        if bad:
+            ctx["report_rejections"] = ctx.get("report_rejections", 0) + 1
+            raise ToolError("narasi memuat nominal yang TIDAK ada di fakta_laporan: " + ", ".join(bad[:6])
+                            + ". Perbaiki narasi: pakai hanya angka dari fakta_laporan, lalu panggil buat_laporan lagi.")
+        r = await asyncio.to_thread(reports.create_report, args.get("periode"), narr, ctx.get("run_id"),
+                                    ctx.get("report_kind"))
+        ctx["report_id"] = r["id"]
+        return {"ok": True, "laporan": r, "catatan": "PDF sudah tersedia di aplikasi (menu Otomasi > Laporan)."}
     raise ToolError(f"tool tidak dikenal: {name}")

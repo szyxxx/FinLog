@@ -1,6 +1,6 @@
 import {
   AlertOctagon, Brain, CircleCheckBig, Copy, FileInput, Flag, GitBranch, History, MessageCircleQuestion, ScanText,
-  ShieldAlert, ShieldCheck, Sparkles, Wand2, Wrench, ListChecks,
+  ShieldAlert, ShieldCheck, Sparkles, Wand2, Wrench, ListChecks, SquareTerminal,
 } from "lucide-react";
 import type { Step } from "../api/types";
 
@@ -22,6 +22,7 @@ export const STEP_META: Record<string, Meta> = {
   confirmation: { label: "Konfirmasi", color: "#f5b454", Icon: MessageCircleQuestion },
   final: { label: "Final", color: "#5fd39a", Icon: Flag },
   error: { label: "Error", color: "#f2727f", Icon: AlertOctagon },
+  sandbox: { label: "Sandbox kode", color: "#7ad694", Icon: SquareTerminal },
 };
 
 export const stepMeta = (type: string): Meta => STEP_META[type] ?? { label: type, color: "#a3a9b5", Icon: CircleCheckBig };
@@ -48,7 +49,15 @@ export function stepGist(s: Step): string {
         const tc = o.tool_calls?.map((t: any) => t.function?.name).join(", ");
         return tc ? `→ ${tc}` : (o.content ?? "").replace(/\s+/g, " ").slice(0, 120);
       }
-      case "tool": return o.ok === false ? `gagal: ${o.error}` : Object.entries(i).map(([k, v]) => `${k}=${typeof v === "object" ? "…" : v}`).join(" ").slice(0, 120);
+      case "tool":
+        if (o.ok === false) return `gagal: ${o.error}`;
+        if (s.name === "konversi_kurs") return `${i.jumlah} ${o.base} × ${o.rate} = Rp${Number(o.hasil).toLocaleString("id-ID")} · ${o.provider}${o.cache ? " (cache)" : ""}`;
+        if (s.name === "analisis_data") return `${(o.jawaban_analis ?? "").replace(/\s+/g, " ").slice(0, 90)}${o.grafik?.length ? ` · ${o.grafik.length} grafik` : ""} · percobaan ${o.percobaan}`;
+        if (s.name === "buat_laporan") return `PDF ${o.laporan?.periode?.label ?? ""} · narasi ${o.laporan?.narasi_sumber ?? ""}`;
+        return Object.entries(i).map(([k, v]) => `${k}=${typeof v === "object" ? "…" : v}`).join(" ").slice(0, 120);
+      case "sandbox":
+        if (o.ditolak_validator) return `percobaan ${i.percobaan} ditolak: ${o.ditolak_validator.join("; ")}`.slice(0, 140);
+        return o.ok ? `percobaan ${i.percobaan} OK · ${(o.stdout ?? "").replace(/\s+/g, " ").slice(0, 90)}` : `percobaan ${i.percobaan} error: ${(o.stderr ?? "").split("\n").pop()}`.slice(0, 140);
       case "ocr": return `${o.lines?.length ?? o.n_boxes ?? 0} baris · conf ${(o.mean_conf ?? 0).toFixed(3)}`;
       case "validation": return o.lolos ? "lolos semua cek" : `gagal: ${(o.gagal ?? []).join(", ")}`;
       case "fallback": return `alasan: ${(i.alasan ?? []).join(", ")} → ${o.mode_baru ?? ""}`;

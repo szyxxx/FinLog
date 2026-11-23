@@ -42,13 +42,13 @@ function load(): Settings {
 /** Label server untuk UI. */
 export const serverLabel = (s: Settings) => (s.baseUrl ? s.baseUrl.replace(/^https?:\/\//, "") : `${location.host} (proxy)`);
 
-export type Route = { page: "sandbox" | "transaksi" | "riwayat" | "sistem"; run?: string; step?: number };
+export type Route = { page: "sandbox" | "transaksi" | "otomasi" | "riwayat" | "sistem"; run?: string; step?: number };
 
 function parseHash(): Route {
   const h = location.hash.replace(/^#\/?/, "");
   const [path, query = ""] = h.split("?");
   const q = new URLSearchParams(query);
-  const page = (["sandbox", "transaksi", "riwayat", "sistem"].includes(path) ? path : "sandbox") as Route["page"];
+  const page = (["sandbox", "transaksi", "otomasi", "riwayat", "sistem"].includes(path) ? path : "sandbox") as Route["page"];
   return { page, run: q.get("run") ?? undefined, step: q.get("step") ? Number(q.get("step")) : undefined };
 }
 
@@ -109,7 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Stream global: perbarui panel lain saat ada run selesai / status job berubah.
   useEffect(() => {
     return client.streamAll((e) => {
-      if (e.event === "run_finished" || e.event === "job_status") bump();
+      if (e.event === "run_finished" || e.event === "job_status" || e.event === "notification") bump();
     });
   }, [client, bump]);
 

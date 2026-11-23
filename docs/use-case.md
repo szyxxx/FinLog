@@ -1,7 +1,7 @@
 <!-- build: compact -->
 # Agen AI Pencatat Keuangan Pribadi Berbasis Local AI Server
 
-Dokumen use case, versi ringkas · Infrastruktur dan Platform Cerdas · Teuku Laksamana Andrian Rahman dan Axel David · Versi 1.0, 9 November 2026.
+Dokumen use case, versi ringkas · Infrastruktur dan Platform Cerdas · Teuku Laksamana Andrian Rahman dan Axel David · Versi 2.0, 24 November 2026 (perluasan layanan; versi 1.0: 9 November 2026).
 
 ## 1. Ringkasan
 
@@ -24,6 +24,11 @@ data keuangan tidak keluar. Web app menampilkan setiap langkah kerja AI, jadi pr
 | Ubah atau hapus catatan | Pengguna | "yang bensin tadi harusnya 35rb" |
 | Lihat langkah kerja AI | Pengguna, Admin | Pemikiran AI, alat yang dipanggil, dan waktunya |
 | Pantau server, atur kunci akses | Admin | Pemakaian GPU, antrean, API key |
+| **Analisis dengan kode dan grafik** | Pengguna | "proyeksi pengeluaran akhir bulan dan hari paling boros?" dijawab dengan kode Python yang ditulis AI sendiri |
+| **Mata uang asing (alat eksternal)** | Pengguna | "beli kopi 6,5 SGD" dikonversi dengan kurs online lalu dicatat dalam rupiah |
+| **Anggaran per kategori** | Pengguna | "atur anggaran makan 1,5 juta"; peringatan saat hampir habis |
+| **Tagihan rutin dan langganan** | Pengguna | Pengingat jatuh tempo, "UKT udah aku bayar", deteksi langganan yang belum didaftarkan |
+| **Otomasi terjadwal dan laporan PDF** | Server (tanpa diminta) | Cek tagihan dan anggaran tiap pagi; laporan PDF mingguan dan bulanan ditulis AI |
 
 Admin adalah pemilik laptop; satu orang boleh merangkap Pengguna dan Admin.
 
@@ -35,7 +40,9 @@ Admin adalah pemilik laptop; satu orang boleh merangkap Pengguna dan Admin.
 |---|---|---|
 | Web app | Tempat pengguna mengirim catatan dan melihat hasil serta langkah kerja AI | React, dibuka di browser |
 | Server | Memeriksa API key (kunci akses), lalu mengantrekan permintaan satu per satu | FastAPI |
-| Agen AI | Memahami masukan, memilih alat (catat, ubah, hapus, cari, ringkasan, tanya pengguna) | LangGraph |
+| Agen AI | Memahami masukan, memilih alat (catat, ubah, hapus, cari, ringkasan, tanya pengguna; sejak 2.0 juga kurs, analisis, anggaran, tagihan, laporan) | LangGraph |
+| Sandbox analis | Menjalankan kode buatan AI secara terisolasi | Python, pandas, matplotlib |
+| Penjadwal dan laporan | Tugas harian, mingguan, bulanan; PDF | Python asyncio, reportlab |
 | Model AI | Memahami bahasa dan membaca gambar | `qwen3.5:9b` lewat Ollama, di GPU |
 | Suara jadi teks | Mengubah rekaman suara menjadi teks | Whisper, di GPU |
 | Baca struk | Membaca teks dari foto struk (OCR) | RapidOCR, di CPU |
@@ -60,7 +67,25 @@ Aturan tambahan:
 - **Anti-dobel:** struk yang sama tidak dicatat dua kali; program menolaknya sebelum AI dipanggil.
 - **Tanya ringkasan:** angka total dihitung oleh basis data, AI hanya merangkainya menjadi kalimat.
 
-## 5. Infrastruktur dan Keamanan
+## 5. Perluasan: Layanan Baru dari Model Lokal
+
+Versi 2.0 memakai model lokal yang sama untuk layanan yang sebelumnya tidak ada:
+
+1. **Sub-agen analis.** AI menulis kode Python untuk pertanyaan yang tidak bisa dijawab alat tetap (tren, proyeksi,
+   perbandingan, grafik). Kode diperiksa dulu oleh program (modul dan perintah berbahaya ditolak, kesalahan logika umum
+   ditolak), lalu dijalankan di **sandbox** tanpa internet. Bila error, AI memperbaikinya sendiri (maks. 3 kali).
+2. **Alat eksternal.** Kurs mata uang diambil dari internet (Frankfurter, kurs Bank Sentral Eropa). Yang dikirim keluar
+   hanya kode mata uang dan tanggal.
+3. **Anggaran, tagihan, langganan.** Batas bulanan per kategori dengan proyeksi akhir bulan, tagihan rutin dengan
+   pengingat, dan deteksi pengeluaran berulang.
+4. **Penjadwal.** Server menjalankan cek harian dan menyuruh agen menulis **laporan PDF** mingguan dan bulanan tanpa diminta.
+   **Penjaga angka** menolak narasi yang memuat nominal yang tidak ada di data, sehingga AI harus memperbaikinya.
+
+Prinsipnya sama dengan versi 1.0: **AI memutuskan dan menulis, program menghitung dan memeriksa.** Dengan model
+lokal, layanan yang memakai banyak token (laporan sekitar 20 ribu token, analisis sekitar 9 ribu token) tidak menambah
+biaya selain listrik.
+
+## 6. Infrastruktur dan Keamanan
 
 - **Satu laptop:** GPU RTX 5060 Laptop 8 GB, RAM 30 GB, Linux. Web app dan server saling terhubung lewat
   `localhost` (alamat di dalam laptop sendiri). Tidak ada port yang dibuka ke jaringan.
@@ -70,10 +95,11 @@ Aturan tambahan:
   untuk permintaan lain.
 - **API key** (kunci akses, semacam kata sandi untuk aplikasi) wajib untuk semua permintaan. Kunci hanya disimpan di
   berkas konfigurasi server.
-- **Privasi:** data, foto, dan suara tetap di laptop. Tidak ada layanan AI cloud.
+- **Privasi:** data, foto, dan suara tetap di laptop. Tidak ada layanan AI cloud. Satu-satunya alat eksternal (kurs)
+  tidak menerima data transaksi.
 - **Opsi lanjutan (belum diuji):** teman sekelas bisa mencoba lewat link `https` dengan Cloudflare Tunnel, tanpa membuka port.
 
-## 6. Framework Agent: LangGraph
+## 7. Framework Agent: LangGraph
 
 Agen sudah memakai **LangGraph** sebagai mesin bawaan. Loop agen buatan sendiri dari versi pertama tetap bisa dipilih
 lewat `AGENT_ENGINE=custom`. Alasan memilih LangGraph:
@@ -90,7 +116,8 @@ lewat `AGENT_ENGINE=custom`. Alasan memilih LangGraph:
 
 Alat pemantau berbasis cloud (mis. LangSmith) tidak dipakai, karena mengirim data keluar laptop.
 
-## 7. Pembagian Tugas Tim
+## 8. Pembagian Tugas Tim
 
 - **Orang A (server dan AI):** server, kunci akses, antrean GPU, agen dan alatnya, pembaca struk, suara jadi teks, basis data, dan migrasi ke LangGraph.
 - **Orang B (web app):** form masukan (teks, foto struk, suara), tampilan langkah kerja AI, kotak konfirmasi, serta halaman transaksi dan sistem.
+- **Perluasan 2.0:** sub-agen analis dan sandbox, alat kurs, anggaran, tagihan, penjadwal, dan laporan PDF (server); halaman Otomasi, grafik dan kode di trace, dan lonceng notifikasi (web app).

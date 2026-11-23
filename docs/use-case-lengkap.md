@@ -4,10 +4,17 @@
 |---|---|
 | Mata kuliah | Infrastruktur dan Platform Cerdas |
 | Tim | 2 orang: pemilik server (sisi server) dan pengembang web app sandbox (sisi client) |
-| Versi / tanggal | 0.5 / 9 November 2026 |
+| Versi / tanggal | 0.6 / 24 November 2026 (perluasan: UC-12 sampai UC-17). Versi 0.5: 9 November 2026 |
 | Pengumpulan dan demo | 10 November 2026 |
 | Sumber | `docs/spec-ringkas.md`, `docs/api.md` (kontrak API final), `server/README.md`, kode `server/app/`, hasil uji `server/data/smoke_output.txt`, benchmark struk `server/data/bench_receipt.md`, dan `webapp/README.md` beserta hasil uji live web app (`webapp/screenshots/live-e2e-hasil.json`) |
 
+> **Perluasan 24 November 2026.** Ditambahkan layanan yang memaksimalkan model lokal dan memakai alat eksternal
+> serta otomasi: analisis data dengan kode dan grafik (UC-12), transaksi mata uang asing lewat API kurs (UC-13),
+> anggaran per kategori (UC-14), tagihan rutin dan deteksi langganan (UC-15), otomasi terjadwal (UC-16), dan laporan
+> PDF (UC-17). Spesifikasinya ada di akhir [Bagian 3](#3-spesifikasi-use-case). Bagian lain dokumen ini tetap
+> menggambarkan prototipe 9 November; batas langkah agen kini 8 (sebelumnya 6). Uji layanan baru:
+> `server/scripts/smoke_services.py`.
+>
 > **Catatan status.** Dokumen ini disinkronkan dengan **prototipe server final dan web app sandbox** pada
 > 9 November 2026. Uji otomatis server (`smoke_test.py`) lolos **62 dari 62 pemeriksaan (0 WARN, 0 FAIL)**
 > dengan konfigurasi final. Web app sandbox sudah **diuji live end-to-end terhadap server sungguhan** di satu
@@ -200,6 +207,12 @@ flowchart LR
 | UC-09 | Pantau kesehatan server | Admin | Lihat status layanan, antrean, dan penggunaan GPU. |
 | UC-10 | Atur API key dan sumber email | Admin | Atur API key dan akun IMAP lewat konfigurasi server. |
 | UC-11 | Jalankan run agent (internal) | Ollama | Loop LLM + tools yang dipakai bersama. |
+| UC-12 | Analisis data dengan kode dan grafik | Pengguna, Ollama | Sub-agen menulis kode Python, dijalankan di sandbox, hasil berupa angka dan grafik. |
+| UC-13 | Catat transaksi mata uang asing | Pengguna, API kurs | Kurs diambil dari internet, nominal dicatat dalam rupiah beserta mata uang asli. |
+| UC-14 | Atur dan pantau anggaran | Pengguna | Batas bulanan per kategori, peringatan, dan proyeksi akhir bulan. |
+| UC-15 | Kelola tagihan rutin dan langganan | Pengguna | Daftar, bayar, dan deteksi pengeluaran berulang. |
+| UC-16 | Otomasi terjadwal | Penjadwal | Cek harian dan laporan berjalan tanpa diminta. |
+| UC-17 | Laporan PDF dengan narasi model | Penjadwal, Pengguna, Ollama | Fakta dihitung program, narasi ditulis model, angka diperiksa. |
 
 **Konvensi umum** (dari `docs/api.md`) yang berlaku untuk semua use case yang melibatkan client:
 
@@ -215,7 +228,7 @@ flowchart LR
   untuk UI): `recorded` (transaksi baru tercatat), `modified` (ubah/hapus), `answered` (pertanyaan
   dijawab), `not_transaction` (email/struk dibaca tetapi bukan transaksi, mis. email promo), `duplicate`
   (ditolak anti-dobel), `possible_duplicate` (struk serupa, menunggu konfirmasi), `needs_confirmation`
-  (agen bertanya balik), dan `error`.
+  (agen bertanya balik), `report` (laporan PDF dibuat, sejak perluasan), dan `error`.
 - Nominal disimpan sebagai bilangan bulat rupiah. Tanggal transaksi berformat `YYYY-MM-DD` dalam zona
   waktu Asia/Jakarta.
 - Pembatasan laju: 30 job per menit per API key (`RATE_LIMIT_PER_MINUTE`), hanya untuk endpoint
@@ -267,7 +280,7 @@ flowchart LR
 | E1 | API key tidak valid atau tidak ada | Server menolak (`401`). Tidak ada run dibuat. Teruji. |
 | E2 | Teks kosong atau lebih dari 4.000 karakter | Server menolak (`422`). |
 | E3 | Tool gagal (argumen tidak valid) | Hasil tool berisi `ok:false` dan instruksi agar model memperbaiki argumen atau melaporkan kegagalan. Bila ada tool tulis yang gagal dan tidak ada yang berhasil, run berstatus `done_with_warnings`. |
-| E4 | Batas 6 langkah agen atau batas waktu run (600 detik) tercapai | Batas langkah: jawaban "batas langkah agent tercapai". Batas waktu: run berstatus `error` dengan pesan `timeout`. |
+| E4 | Batas 8 langkah agen atau batas waktu run (600 detik) tercapai | Batas langkah: jawaban "batas langkah agent tercapai". Batas waktu: run berstatus `error` dengan pesan `timeout`. |
 | E5 | Ollama tidak merespons atau mengembalikan kesalahan | Run berstatus `error` dan job `error`. Tidak ada percobaan ulang otomatis. *Belum diuji.* |
 | E6 | Melebihi 30 job per menit per key | Server menolak (`429`). |
 
@@ -489,7 +502,7 @@ hanya memanggil LLM bila validasi gagal. Perbandingan ketiganya ada di Bagian 9.
 | Kode | Kondisi | Penanganan |
 |---|---|---|
 | A1 | Agen bertanya lewat teks biasa, bukan lewat tool | Bila jawaban memuat tanda tanya dan tidak ada tool yang berhasil, server tetap menandai `awaiting_confirmation` (langkah `confirmation/pertanyaan_teks`). Heuristik ini dapat keliru (lihat 9.6). |
-| A2 | Jawaban pengguna masih ambigu | Agen dapat bertanya lagi. Tidak ada batas jumlah putaran selain batas 6 langkah agen per run. |
+| A2 | Jawaban pengguna masih ambigu | Agen dapat bertanya lagi. Tidak ada batas jumlah putaran selain batas 8 langkah agen per run. |
 | A3 | Pengguna ingin membatalkan | Tidak ada status "dibatalkan". Pengguna menjawab "tidak" atau "batal". Teruji untuk struk serupa: setelah dijawab "tidak", jumlah transaksi tetap. |
 | E1 | Pengguna tidak menjawab | Tidak ada kedaluwarsa otomatis. Run tetap `awaiting_confirmation`. |
 | E2 | Server dimulai ulang saat menunggu | Riwayat percakapan tersimpan di SQLite (`runs.messages_json`), sehingga jawaban tetap dapat dikirim setelah server hidup kembali. *Belum diuji.* |
@@ -681,6 +694,161 @@ hanya memanggil LLM bila validasi gagal. Perbandingan ketiganya ada di Bagian 9.
 | **Pascakondisi** | Run berakhir pada salah satu status: `done`, `awaiting_confirmation`, `done_with_warnings`, atau `error`. Seluruh langkah tersimpan di trace. |
 
 **Alur utama:** lihat [4.5 Cara Kerja Agent](#45-cara-kerja-agent-loop-llm--tools).
+
+
+---
+
+### UC-12 Analisis Data dengan Kode dan Grafik
+
+| Elemen | Isi |
+|---|---|
+| **ID** | UC-12 |
+| **Nama** | Analisis data dengan kode dan grafik |
+| **Aktor** | Pengguna (primer), Ollama (pendukung: agen utama dan sub-agen analis) |
+| **Prasyarat** | Ada transaksi tersimpan. Paket pandas dan matplotlib terpasang di server. |
+| **Pascakondisi (sukses)** | Pengguna menerima jawaban berisi angka yang dihitung kode, plus grafik (PNG, tabel `artifacts`) bila diminta. Trace memuat langkah `llm` `analis_tulis_kode_N` dan `sandbox` `jalankan_kode` untuk setiap percobaan. Data tidak berubah (`outcome = answered`). |
+| **Pascakondisi (gagal)** | Setelah 3 percobaan gagal, tool `analisis_data` mengembalikan `ok:false`; agen menjawab dengan alat lain atau menyampaikan kegagalan. |
+
+**Alur utama** (`POST /v1/chat`, mis. "bandingkan pengeluaran makan per bulan, buatkan grafik")
+
+1. Agen utama memanggil tool `analisis_data` dengan pertanyaan lengkap.
+2. Server menyalin transaksi ke CSV di folder sementara dan menyusun profil data (jumlah baris, bulan, kategori).
+3. Sub-agen (model yang sama, tanpa thinking) menulis kode Python. Tersedia `df`, `keluar`, `masuk`, dan fungsi bantu
+   (`total_per`, `per_bulan`, `per_hari_minggu`, `proyeksi_akhir_bulan`, `grafik_batang`, `grafik_garis`).
+4. Pemeriksa AST menolak impor di luar modul analisis, `open`/`eval`/`exec`, dan atribut dunder. Pemeriksa logika
+   menolak penjumlahan `jumlah` tanpa memisahkan pemasukan dan pengeluaran.
+5. Kode dijalankan di proses terpisah (`python -I`) dengan batas memori 1 GB, batas waktu 25 detik, jaringan diputus,
+   builtins dibatasi, dan env minimal.
+6. Keluaran (`print`), variabel `hasil`, dan grafik dikembalikan ke agen utama; grafik tampil di web app.
+7. Agen utama menyusun jawaban dari angka hasil kode.
+
+**Alur alternatif / eksepsi**
+
+| Kode | Kondisi | Penanganan |
+|---|---|---|
+| A1 | Kode error | Baris yang gagal dan pesan exception dikirim ke sub-agen untuk diperbaiki (maks. 3 percobaan). Teruji: berhasil pada percobaan ke-2. |
+| A2 | Kode ditolak pemeriksa | Alasan penolakan dikirim ke sub-agen; percobaan dihitung. |
+| A3 | Kode terlalu panjang sehingga terpotong | Pesan `SyntaxError` menyebut kemungkinan terpotong dan meminta versi lebih pendek. |
+| E1 | Semua percobaan gagal | Tool gagal dengan keterangan bahwa data tersedia (bukan data kosong), agar agen tidak menyimpulkan keliru. |
+
+---
+
+### UC-13 Catat Transaksi Mata Uang Asing
+
+| Elemen | Isi |
+|---|---|
+| **ID** | UC-13 |
+| **Nama** | Catat transaksi mata uang asing |
+| **Aktor** | Pengguna (primer), API kurs Frankfurter/open.er-api.com (alat eksternal) |
+| **Prasyarat** | `FX_ENABLED=true`. Internet tersedia, atau kurs untuk tanggal itu sudah ada di cache. |
+| **Pascakondisi (sukses)** | Transaksi tersimpan dalam rupiah dengan `orig_currency`, `orig_amount`, dan `fx_rate`. |
+
+**Alur utama** ("beli kopi di bandara Changi 6,5 SGD")
+
+1. Agen memanggil `konversi_kurs(jumlah=6.5, dari="SGD")`.
+2. Server mencari cache `fx_cache`; bila tidak ada, meminta kurs ke Frankfurter (hanya kode mata uang dan tanggal yang
+   dikirim), lalu menyimpannya.
+3. Agen memanggil `catat_transaksi` dengan jumlah rupiah dan `mata_uang_asli`, `jumlah_asli`, `kurs`.
+4. Trace menampilkan kurs, tanggal kurs, sumber, dan latensi internet. Teruji: 6,5 SGD × 14.113 = Rp91.734 dalam 17 detik.
+
+| Kode | Kondisi | Penanganan |
+|---|---|---|
+| A1 | Frankfurter gagal | Sumber cadangan open.er-api.com (kurs terbaru, diberi peringatan bila transaksi bertanggal lampau). |
+| A2 | Internet mati | Kurs cache terdekat sebelum tanggal itu, ditandai "cache lama, offline". |
+| E1 | Semua sumber gagal dan tidak ada cache | Tool gagal; agen menyampaikan bahwa kurs tidak tersedia, transaksi tidak dicatat. |
+
+---
+
+### UC-14 Atur dan Pantau Anggaran
+
+| Elemen | Isi |
+|---|---|
+| **ID** | UC-14 |
+| **Nama** | Atur dan pantau anggaran |
+| **Aktor** | Pengguna |
+| **Pascakondisi (sukses)** | Anggaran tersimpan (tabel `budgets`). Setiap pengeluaran baru diperiksa terhadap anggaran. |
+
+**Alur utama**
+
+1. Pengguna: "atur anggaran transportasi 500rb sebulan" (chat) atau mengisi form di halaman Otomasi (`PUT /v1/budgets/{kategori}`).
+2. Agen memanggil `atur_anggaran`; server menghitung status bulan berjalan: terpakai, sisa, persen, proyeksi akhir bulan, dan sisa aman per hari.
+3. Setelah `catat_transaksi`/`bayar_tagihan` pengeluaran, server memeriksa anggaran. Bila melewati ambang (bawaan 80%)
+   atau 100%, hasil tool memuat `peringatan_anggaran` yang disampaikan agen, dan notifikasi dibuat sekali per bulan per status.
+4. "Sisa anggaran makan berapa?" dijawab lewat `cek_anggaran`.
+
+| Kode | Kondisi | Penanganan |
+|---|---|---|
+| A1 | Proyeksi akhir bulan melewati batas walau belum mencapai ambang | Status `diproyeksikan_lewat`; cek harian (UC-16) membuat notifikasi. |
+| E1 | Kategori bukan kategori pengeluaran | Ditolak (`400` / tool gagal). |
+
+---
+
+### UC-15 Kelola Tagihan Rutin dan Langganan
+
+| Elemen | Isi |
+|---|---|
+| **ID** | UC-15 |
+| **Nama** | Kelola tagihan rutin dan langganan |
+| **Aktor** | Pengguna |
+| **Pascakondisi (sukses)** | Tagihan tersimpan (tabel `bills`) dengan jatuh tempo berikutnya; pembayaran tercatat sebagai transaksi dengan `bill_id`. |
+
+**Alur utama**
+
+1. "Daftarkan tagihan listrik PLN 200rb tiap tanggal 20" → `tambah_tagihan` (tanggal 1-31 diartikan tanggal berikutnya yang belum lewat).
+2. "UKT udah aku bayar barusan" → agen memanggil `daftar_tagihan`, menemukan UKT, lalu `bayar_tagihan`: transaksi Rp4.500.000 tercatat dan jatuh tempo maju satu periode (teruji).
+3. "Ada langganan yang belum aku daftarkan?" → `deteksi_langganan` menemukan pengeluaran berulang (teruji: Netflix dan Spotify), lalu agen menawarkan pendaftaran; jawaban "daftarkan Netflix dan Spotify aja" menambahkan keduanya (teruji).
+
+| Kode | Kondisi | Penanganan |
+|---|---|---|
+| A1 | Tagihan `catat_otomatis` jatuh tempo | Cek harian mencatat pembayaran sendiri dan membuat notifikasi. |
+| E1 | Nama tagihan aktif sudah ada | Ditolak; agen menyarankan mengubah tagihan yang ada. |
+
+---
+
+### UC-16 Otomasi Terjadwal
+
+| Elemen | Isi |
+|---|---|
+| **ID** | UC-16 |
+| **Nama** | Otomasi terjadwal |
+| **Aktor** | Penjadwal di server (primer), Ollama (untuk laporan) |
+| **Prasyarat** | `AUTOMATION_ENABLED=true`, server menyala. |
+| **Pascakondisi** | Tabel `automations` mencatat slot terakhir, waktu, status, dan detail tiap tugas. Notifikasi baru dikirim lewat SSE `notification`. |
+
+**Alur utama**
+
+1. Setiap 60 detik penjadwal menghitung slot jadwal yang sudah jatuh tempo: `harian` (tanggal), `deteksi_langganan` dan `laporan_mingguan` (minggu ISO), `laporan_bulanan` (bulan).
+2. Bila slot belum pernah dijalankan, tugas dijalankan: cek harian dan deteksi langganan langsung (tanpa LLM); laporan dimasukkan ke antrean job sebagai `input_type = automation` (UC-17).
+3. Admin dapat menjalankan tugas mana pun sekarang dari halaman Otomasi (`POST /v1/automations/{name}/run`) tanpa menggeser jadwal.
+
+| Kode | Kondisi | Penanganan |
+|---|---|---|
+| A1 | Server mati saat jadwal | Slot dikejar ketika server hidup (teruji: empat tugas berjalan saat server dinyalakan pertama kali). |
+| E1 | Tugas gagal | Status `error` beserta pesan disimpan; slot tidak ditandai selesai sehingga dicoba lagi pada tick berikutnya untuk tugas manual. |
+
+---
+
+### UC-17 Laporan PDF dengan Narasi Model
+
+| Elemen | Isi |
+|---|---|
+| **ID** | UC-17 |
+| **Nama** | Laporan PDF dengan narasi model |
+| **Aktor** | Penjadwal atau Pengguna (pemicu), Ollama |
+| **Pascakondisi (sukses)** | PDF tersimpan (tabel `reports`, `narrative_source = agent`), notifikasi "Laporan ... siap", run `outcome = report`. |
+
+**Alur utama**
+
+1. Pemicu: penjadwal (Senin / tanggal 1), tombol "Buat" di halaman Otomasi (`POST /v1/reports`), atau chat "buatkan laporan bulan lalu".
+2. Agen memanggil `fakta_laporan(periode)`: total, perbandingan periode sebelumnya, kategori, merchant teratas, transaksi terbesar, anggaran, tagihan.
+3. Agen menulis narasi 2-4 paragraf lalu memanggil `buat_laporan(periode, narasi)`.
+4. **Penjaga angka**: setiap nominal Rp di narasi harus ada di fakta (toleransi pembulatan "Rp4,1 juta"; selisih antartotal diizinkan).
+5. Program menggambar grafik (kategori, harian, anggaran) dan menyusun PDF A4 dengan reportlab.
+
+| Kode | Kondisi | Penanganan |
+|---|---|---|
+| A1 | Narasi memuat nominal yang tidak ada di fakta | Tool gagal dengan daftar nominal bermasalah; agen memperbaiki narasi. Teruji: narasi "potensi penghematan Rp 300.000-500.000" (tidak ada di fakta) ditolak, lalu agen menulis ulang dan PDF berhasil dibuat. |
+| A2 | Agen tidak menghasilkan laporan sampai run selesai (otomasi) | Guard `laporan_cadangan`: PDF dibuat dengan narasi templat (`narrative_source = template`). |
 
 ---
 
@@ -983,7 +1151,7 @@ Agen mengikuti pola umum *tool-calling agent* (`app/agent.py`):
 6. **Guard.** (a) Bila model mengaku sudah mencatat tanpa ada tool tulis yang berhasil, server menyisipkan
    pesan sistem agar model memanggil tool (`klaim_tanpa_tool`, satu kali per run). (b) Bila model menutup
    giliran tanpa teks jawaban, jawaban dibuat dari hasil tool tulis (`jawaban_kosong`).
-7. **Ulangi** sampai model menjawab tanpa tool call, memanggil `minta_konfirmasi`, atau batas 6 langkah
+7. **Ulangi** sampai model menjawab tanpa tool call, memanggil `minta_konfirmasi`, atau batas 8 langkah
    atau 600 detik tercapai.
 8. **Rekam.** Di setiap langkah, agen menulis ke trace: masukan, prompt, keluaran, nama tool dan
    argumen, hasil, durasi, jumlah token, dan waktu. Server menyiarkannya lewat SSE dan menetapkan
@@ -1003,7 +1171,7 @@ flowchart TD
     DEC -- "Ya" --> KON{"Tool = minta_konfirmasi?"}
     KON -- "Ya" --> PAUSE(["Status awaiting_confirmation,<br/>worker bebas"])
     KON -- "Tidak" --> EXEC["Jalankan tool,<br/>catat hasil atau kesalahan ke trace"]
-    EXEC --> LIM{"Batas 6 langkah<br/>atau 600 detik tercapai?"}
+    EXEC --> LIM{"Batas 8 langkah<br/>atau 600 detik tercapai?"}
     LIM -- "Tidak" --> LLM
     LIM -- "Ya" --> FAIL(["Batas langkah atau timeout"])
 ```
@@ -1254,7 +1422,7 @@ Karena hanya ada satu GPU dengan VRAM terbatas, permintaan diproses **berurutan*
 | **Penghapusan lunak** | Transaksi yang dihapus hanya ditandai `deleted`. |
 | **Retensi berkas** | Gambar, audio, dan `.eml` yang diunggah menetap di `data/uploads/`. Belum ada penghapusan otomatis. Enkripsi disk laptop dianjurkan. |
 | **Pengguna** | Satu buku kas. Tidak ada autentikasi per pengguna. API key hanya membatasi akses ke server. |
-| **Pertahanan prompt injection** | **Belum ada** pertahanan khusus. Isi email/struk dimasukkan ke prompt sebagai data. Mitigasi yang ada: batas 6 langkah, penghapusan lunak, dan jejak audit di trace. *Belum diuji.* |
+| **Pertahanan prompt injection** | **Belum ada** pertahanan khusus. Isi email/struk dimasukkan ke prompt sebagai data. Mitigasi yang ada: batas 8 langkah, penghapusan lunak, dan jejak audit di trace. *Belum diuji.* |
 
 Keterbatasan yang diakui: model lokal 9B tidak kebal terhadap *prompt injection*. Pertahanan yang kuat
 (batas wewenang tool dan konfirmasi yang ditegakkan kode) menjadi pekerjaan lanjutan (7.5).
@@ -1416,7 +1584,7 @@ foto struk asli dan suara manusia belum dilakukan dan menjadi pengembangan lanju
 |---|---|---|---|
 | R-01 | VRAM 8 GB tidak cukup untuk LLM dan speech-to-text sekaligus. | Job gagal atau lambat karena pemuatan ulang model. | **Teratasi pada uji:** LLM (sekitar 5,7 GB) dan Whisper `small` (sekitar 0,5 GB) muat bersamaan, puncak 6.782 dari 8.151 MiB pada putaran terbaru (7.361 sampai 7.608 MiB pada putaran sebelumnya). OCR di CPU. Margin sempit, jangan naikkan ukuran model tanpa uji. |
 | R-02 | `qwen3.5:9b` tidak mendukung vision. | UC-02 tidak berjalan. | **Teratasi:** Ollama melaporkan kapabilitas `vision`, `tools`, `thinking`. Selain itu jalur OCR tidak bergantung pada vision. |
-| R-03 | Tool calling model lokal tidak stabil. | Transaksi salah atau agen macet. | **Termitigasi sebagian:** *guard* untuk klaim tanpa tool dan jawaban kosong, hasil tool gagal berisi instruksi, normalisasi `jenis`, batas 6 langkah dan 600 detik. Perilaku model tetap dapat bervariasi (lihat 9.6). |
+| R-03 | Tool calling model lokal tidak stabil. | Transaksi salah atau agen macet. | **Termitigasi sebagian:** *guard* untuk klaim tanpa tool dan jawaban kosong, hasil tool gagal berisi instruksi, normalisasi `jenis`, batas 8 langkah dan 600 detik. Perilaku model tetap dapat bervariasi (lihat 9.6). |
 | R-04 | Sambungan dua laptop gagal pada saat demo (WiFi kampus memblokir antarperangkat, atau firewall menutup port 8000). | Client tidak dapat terhubung ke server. | Tailscale tidak dipakai. Mitigasi: hotspot HP untuk kedua laptop, `ufw` membuka port 8000 untuk jaringan lokal, cek `curl /health` dan IP baru sebelum demo, dan cadangan menjalankan web app di laptop server (`localhost`). Uji dua laptop **belum dilakukan**. |
 | R-05 | Halusinasi nominal atau tanggal. | Catatan keuangan keliru. | Normalisasi nominal oleh kode, validasi struk terhadap teks OCR, agregasi lewat SQL, konfirmasi untuk kasus ambigu. Evaluasi pada data asli belum ada. |
 | R-06 | *Prompt injection* lewat email atau struk. | Agen dimanipulasi (mis. menghapus data). | Belum ada pertahanan khusus. Penghapusan lunak dan trace membantu audit. *Belum diuji.* |

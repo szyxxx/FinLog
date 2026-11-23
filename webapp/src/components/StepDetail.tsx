@@ -3,6 +3,7 @@ import type { Step } from "../api/types";
 import { dur, num, rp } from "../lib/format";
 import { Badge, Json, RichText, Tabs } from "./ui";
 import { ValidationChecks } from "./ReceiptViewer";
+import { ChartGallery, ReportLinks } from "./Artifacts";
 
 function Messages({ messages }: { messages: any[] }) {
   return (
@@ -103,6 +104,41 @@ function Timing({ step }: { step: Step }) {
 
 function ToolDetail({ step }: { step: Step }) {
   const o = step.output ?? {};
+  const i = step.input ?? {};
+  if (o.ok && step.name === "analisis_data") {
+    return (
+      <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+        <div className="small muted">Pertanyaan ke sub-agen analis: <b>{i.pertanyaan}</b></div>
+        <div className="msg"><div className="role role-tool">hasil kode (stdout) · percobaan ke-{o.percobaan}</div><pre>{o.jawaban_analis}</pre></div>
+        <ChartGallery charts={o.grafik ?? []} />
+        <div className="label">Kode yang dijalankan di sandbox</div>
+        <pre className="json mono inset" style={{ maxHeight: 320 }}>{o.kode}</pre>
+        {o.hasil && <><div className="label">Variabel hasil</div><Json value={o.hasil} maxHeight={200} /></>}
+      </div>
+    );
+  }
+  if (o.ok && step.name === "konversi_kurs") {
+    return (
+      <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+        <div className="row wrap" style={{ gap: 8 }}><Badge tone="info">alat eksternal</Badge><Badge tone={o.cache ? "muted" : "ok"}>{o.cache ? "dari cache lokal" : `internet · ${dur(o.latency_ms)}`}</Badge></div>
+        <dl className="kv">
+          <dt>Konversi</dt><dd><b>{num(o.jumlah_asli, 2)} {o.base}</b> × {num(o.rate, 4)} = <b>{o.quote === "IDR" ? rp(o.hasil) : `${num(o.hasil, 2)} ${o.quote}`}</b></dd>
+          <dt>Tanggal kurs</dt><dd>{o.rate_date}</dd><dt>Sumber</dt><dd>{o.provider}</dd>
+          <dt>Data yang dikirim keluar</dt><dd>hanya kode mata uang + tanggal (tanpa nominal/transaksi)</dd>
+        </dl>
+        {o.peringatan && <div className="banner mock">{o.peringatan.join(" · ")}</div>}
+      </div>
+    );
+  }
+  if (o.ok && step.name === "buat_laporan" && o.laporan) {
+    return (
+      <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+        <ReportLinks reports={[{ id: o.laporan.id, url: o.laporan.url, label: o.laporan.periode?.label, sumber: o.laporan.narasi_sumber }]} />
+        <div className="label">Narasi dari model (lolos pemeriksaan angka)</div>
+        <div className="msg"><pre>{i.narasi}</pre></div>
+      </div>
+    );
+  }
   return (
     <div className="two-col" style={{ marginTop: 8 }}>
       <div><div className="label" style={{ marginBottom: 6 }}>Argumen dari LLM</div><Json value={step.input} /></div>
@@ -113,7 +149,8 @@ function ToolDetail({ step }: { step: Step }) {
           {o.ok === false && <Badge tone="bad">gagal</Badge>}
         </div>
         {o.ok === false && <div className="banner err" style={{ marginBottom: 8 }}>{o.error}{o.instruksi && <> · <i>{o.instruksi}</i></>}</div>}
-        {o.transaksi && <div className="small" style={{ marginBottom: 8 }}>Transaksi #{o.transaksi.id}: <b>{rp(o.transaksi.amount)}</b> {o.transaksi.kind} · {o.transaksi.category}</div>}
+        {o.transaksi && <div className="small" style={{ marginBottom: 8 }}>Transaksi #{o.transaksi.id}: <b>{rp(o.transaksi.amount)}</b> {o.transaksi.kind} · {o.transaksi.category}{o.transaksi.orig_currency ? ` · asli ${o.transaksi.orig_currency} ${o.transaksi.orig_amount}` : ""}</div>}
+        {o.peringatan_anggaran?.map((w: string) => <div key={w} className="banner mock" style={{ marginBottom: 8 }}>{w}</div>)}
         <Json value={o} />
       </div>
     </div>
@@ -148,6 +185,25 @@ export function StepDetail({ step, steps }: { step: Step; steps: Step[] }) {
     case "tool":
       body = <ToolDetail step={step} />;
       break;
+    case "sandbox":
+      body = (
+        <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <Badge tone={o.ok ? "ok" : "warn"}>{o.ok ? "berhasil" : o.ditolak_validator ? "ditolak pemeriksa" : o.timeout ? "timeout" : "error"}</Badge>
+            <span className="small muted">percobaan {i.percobaan} · exit {o.exit_code ?? "–"} · {dur(o.durasi_ms)}</span>
+          </div>
+          {o.ditolak_validator && <div className="banner err">{o.ditolak_validator.join(" · ")}</div>}
+          <div className="two-col">
+            <div><div className="label" style={{ marginBottom: 6 }}>Kode buatan model</div><pre className="json mono inset" style={{ maxHeight: 360 }}>{i.kode}</pre></div>
+            <div className="stack" style={{ gap: 8 }}>
+              {o.stdout && <><div className="label">stdout</div><pre className="json mono inset" style={{ maxHeight: 200 }}>{o.stdout}</pre></>}
+              {o.stderr && <><div className="label">error (dikirim balik ke model untuk diperbaiki)</div><pre className="json mono inset" style={{ maxHeight: 200 }}>{o.stderr}</pre></>}
+              {o.grafik?.length > 0 && <div className="small muted">{o.grafik.length} grafik dibuat (tampil di step tool analisis_data)</div>}
+            </div>
+          </div>
+        </div>
+      );
+      break;
     case "validation":
       body = <div style={{ marginTop: 8 }}><div className="row" style={{ marginBottom: 8 }}><Badge tone={o.lolos ? "ok" : "warn"}>{o.lolos ? "lolos" : `gagal: ${(o.gagal ?? []).join(", ")}`}</Badge><span className="small muted">sumber {i.sumber}</span></div><ValidationChecks step={step} /></div>;
       break;
@@ -170,9 +226,9 @@ export function StepDetail({ step, steps }: { step: Step; steps: Step[] }) {
               {o.engine && <span>{o.engine.model} · {o.engine.device} · {o.engine.compute_type}</span>}
             </div>
             {o.segments?.length > 0 && (
-              <table className="tbl"><thead><tr><th>Mulai</th><th>Selesai</th><th>Teks</th><th className="r">avg_logprob</th></tr></thead>
+              <div className="tbl-wrap"><table className="tbl"><thead><tr><th>Mulai</th><th>Selesai</th><th>Teks</th><th className="r">avg_logprob</th></tr></thead>
                 <tbody>{o.segments.map((sg: any, k: number) => <tr key={k}><td className="mono">{num(sg.start, 2)}s</td><td className="mono">{num(sg.end, 2)}s</td><td>{sg.text}</td><td className="r mono">{num(sg.avg_logprob, 3)}</td></tr>)}</tbody>
-              </table>
+              </table></div>
             )}
           </div>
         );
